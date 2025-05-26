@@ -1,1 +1,0 @@
-This is a rule inside the rules folder.
