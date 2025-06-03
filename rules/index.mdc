@@ -8,6 +8,9 @@ Welcome! This is the main entry point for all company rules.
 
 This rules file contains the rules and operational guidelines for different companies. Each company has its own dedicated folder with specific rules and documentation.
 
+## Very important note.
+- All rules end with the `.mdc` extention.
+
 ## Directory Structure
 
 - Each company has its own folder within the `rules/` directory
