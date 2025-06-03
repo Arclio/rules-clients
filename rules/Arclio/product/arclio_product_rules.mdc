@@ -1,0 +1,72 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Arclio Product Rules
+
+## Product Development Standards
+
+- **Rule Name**: Arclio Product Excellence Framework
+- **Description**: Core guidelines ensuring consistent, high-quality product development and delivery.
+
+### Product Development Lifecycle
+1. **Research Phase**
+   - Minimum 2 weeks market analysis
+   - User persona validation
+   - Competitor feature mapping
+   - ROI projection requirements
+
+2. **Design Standards**
+   - **UI Requirements**:
+     - Follow Arclio Design System
+     - Mobile-first approach
+     - Accessibility compliance (WCAG 2.1)
+     - Dark/Light mode support
+   
+   - **UX Guidelines**:
+     - Maximum 3 clicks to core features
+     - Sub-2 second loading time
+     - Offline capability where applicable
+     - Error state handling
+
+3. **Feature Development**
+   - **Prioritization Criteria**:
+     - User impact score (min 7/10)
+     - Technical feasibility assessment
+     - Resource requirement analysis
+     - Time-to-market estimation
+
+   - **Quality Gates**:
+     - 95% test coverage
+     - Performance benchmark meets
+     - Security scan clearance
+     - Accessibility audit pass
+
+### Release Protocol
+1. **Pre-Release Checklist**
+   - [ ] Feature documentation complete
+   - [ ] QA sign-off obtained
+   - [ ] Performance testing passed
+   - [ ] Security assessment cleared
+   - [ ] User documentation updated
+
+2. **Launch Requirements**
+   - Phased rollout strategy
+   - Monitoring setup
+   - Rollback plan documented
+   - Support team briefing
+
+### Maintenance Standards
+- Weekly performance review
+- Monthly feature usage analysis
+- Quarterly roadmap alignment
+- Bi-annual technology stack assessment
+
+### Success Metrics
+- User satisfaction > 4.5/5
+- Feature adoption rate > 60%
+- Support ticket reduction 20% YoY
+- System uptime 99.9%
+
+Remember: Product excellence is our core differentiator. Every feature must enhance user value while maintaining Arclio's quality standards.

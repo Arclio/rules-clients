@@ -1,0 +1,89 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Operations Team Guidelines
+
+## Operational Excellence Framework
+
+- **Rule Name**: Operations Management Standards
+- **Description**: Core principles and practices for Arclio's operations team to ensure smooth, efficient, and scalable business processes.
+
+### Core Operations Areas
+1. **Infrastructure Management**
+   - **System Uptime**:
+     - 99.99% availability target
+     - Redundancy requirements
+     - Disaster recovery plans
+     - Load balancing protocols
+   
+   - **Resource Optimization**:
+     - Capacity planning
+     - Cost optimization
+     - Performance monitoring
+     - Resource allocation
+
+2. **Process Management**
+   - **Workflow Standards**:
+     - Process documentation
+     - SLA definitions
+     - Quality control measures
+     - Automation priorities
+
+### Service Level Agreements
+1. **Response Times**
+   | Priority Level | Response Time | Resolution Time |
+   |----------------|---------------|-----------------|
+   | P0 (Critical)  | 15 minutes    | 2 hours        |
+   | P1 (High)      | 1 hour        | 4 hours        |
+   | P2 (Medium)    | 4 hours       | 24 hours       |
+   | P3 (Low)       | 24 hours      | 72 hours       |
+
+2. **Maintenance Windows**
+   - Scheduled maintenance: Sundays 2-6 AM
+   - Emergency patches: As needed with 1-hour notice
+   - System updates: First Sunday of each month
+   - Backup verification: Daily at 3 AM
+
+### Incident Management
+1. **Response Protocol**
+   - Incident detection
+   - Severity assessment
+   - Team mobilization
+   - Communication plan
+   - Resolution tracking
+
+2. **Documentation Requirements**
+   - Incident timeline
+   - Root cause analysis
+   - Resolution steps
+   - Prevention measures
+
+### Monitoring & Reporting
+1. **Key Metrics**
+   - System performance
+   - Resource utilization
+   - Cost efficiency
+   - Service quality
+
+2. **Reporting Schedule**
+   - Daily operations summary
+   - Weekly performance review
+   - Monthly trend analysis
+   - Quarterly strategic assessment
+
+### Security & Compliance
+1. **Security Protocols**
+   - Access control management
+   - Security audit schedule
+   - Vulnerability assessments
+   - Patch management
+
+2. **Compliance Requirements**
+   - Regular audits
+   - Policy enforcement
+   - Training requirements
+   - Documentation maintenance
+
+Remember: Operational excellence requires proactive management, continuous improvement, and unwavering attention to detail. Every process should be documented, measured, and optimized.

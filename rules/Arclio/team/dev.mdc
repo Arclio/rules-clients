@@ -1,0 +1,82 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Development Team Guidelines
+
+## Team Operations Framework
+
+- **Rule Name**: Development Excellence Standards
+- **Description**: Core principles and practices for the Arclio development team.
+
+### Team Structure & Roles
+1. **Squad Organization**
+   - 4-6 developers per squad
+   - 1 tech lead per squad
+   - 1 product owner
+   - 1 scrum master/agile coach
+   
+2. **Specialization Requirements**
+   - **Frontend Specialists**:
+     - React/TypeScript expertise
+     - UI/UX understanding
+     - Performance optimization skills
+   
+   - **Backend Specialists**:
+     - Microservices architecture
+     - Database optimization
+     - API design expertise
+   
+   - **DevOps Engineers**:
+     - CI/CD pipeline management
+     - Infrastructure as Code
+     - Monitoring & alerting
+
+### Development Practices
+1. **Code Standards**
+   - **Review Process**:
+     - Minimum 2 peer reviews
+     - Tech lead final approval
+     - Documentation verification
+     - Test coverage validation
+
+   - **Quality Gates**:
+     - Unit test coverage > 85%
+     - Integration test coverage > 75%
+     - Zero critical security issues
+     - Performance benchmark pass
+
+2. **Collaboration Protocol**
+   - Daily standup at 10:00 AM
+   - Weekly tech sync Wednesday 2:00 PM
+   - Bi-weekly architecture review
+   - Monthly tech debt assessment
+
+### Knowledge Sharing
+1. **Required Activities**
+   - Weekly tech talks
+   - Monthly coding dojos
+   - Quarterly hackathons
+   - Documentation workshops
+
+2. **Learning Path**
+   - New tech evaluation
+   - Certification support
+   - Conference participation
+   - Mentorship program
+
+### Communication Standards
+- **Channels**:
+  - Technical discussions in Discord
+  - Documentation in Confluence
+  - Tasks in Jira
+  - Code reviews in GitHub
+
+### Performance Metrics
+- Code quality scores
+- Sprint velocity
+- Bug resolution time
+- Documentation coverage
+
+Remember: Excellence in development comes from consistent practices, continuous learning, and effective collaboration.

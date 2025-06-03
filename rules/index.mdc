@@ -1,7 +1,12 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
 # Company Rules Directory
 Welcome! This is the main entry point for all company rules.
 
-This directory contains the rules and operational guidelines for different companies. Each company has its own dedicated folder with specific rules and documentation.
+This rules file contains the rules and operational guidelines for different companies. Each company has its own dedicated folder with specific rules and documentation.
 
 ## Directory Structure
 
@@ -20,6 +25,12 @@ This directory contains the rules and operational guidelines for different compa
 - Arclio
 - 11:11
 - cea
+
+## Avialable rule-set entry points
+
+- Arclio : [index.mdc](mdc:rules/Arclio/index.mdc)
+- 11_11 : [index.mdc](mdc:rules/11_11/index.mdc)
+- cea : [index.mdc](mdc:rules/cea/index.mdc)
 
 ## Important Note for LLMs
 

@@ -1,0 +1,122 @@
+---
+description: This document serves as the central index for all Arclio company rules and guidelines. It serves as a comprehensive guide for LLMs to effectively navigate, understand, and apply Arclio's rule system. It provides a structured overview of where to find specific rules and how they are organized.
+globs: 
+alwaysApply: false
+---
+# Arclio Rules Index
+
+## Master Rule Framework
+
+- **Rule Name**: Arclio Knowledge Navigation Protocol
+- **Description**: Comprehensive guide for LLMs to effectively navigate, understand, and apply Arclio's rule system.
+
+### Core Navigation Protocol
+1. **Rule Processing Sequence**
+   - Start with this index file
+   - Identify relevant category
+   - Accesse
+   - Apply contextual understanding
+   - Consider cross-categorrity Matrix**
+   | Category    | Priority | Cross-Reference Need |
+   |-------------|----------|---------------------|
+   | General     | Highest  | Always                 | High     | Usually            |
+   | igh     | Technical Context  |
+   | Finedium   | Budget Impact      |
+   | Prod| High     | Feature Context    |
+
+### Category Summaries & Quick Access
+
+1. **General Rules** (`/general/`)
+   - **Core Documents**:
+     - [dos_and_donts.mdc](mdc:rules/Arclio/general/dos_and_donts.mdc) : Company culture & behavior
+     - [tool_usage_guideline.mdc](mdc:rules/Arclio/general/tool_usage_guideline.mdc) : Tool usage guidelines
+   - **Key Principles**:
+     - Security first
+     - Ethical compliance
+     - Cultural alignment
+2. **Team Rules** (`/team/`)
+   - **Core Documents**:
+     - [management.mdc](mdc:rules/Arclio/team/management.mdc): Leadership framework
+     - [operations.mdc](mdc:rules/Arclio/team/operations.mdc): Process
+     - [dev.mdc](mdc:rules/Arclio/team/dev.mdc): Technical team standards
+     - [finance.mdc](mdc:rules/Arclio/team/finance.mdc) : Resource management
+   - **Key Principles**:
+     - Clear hierarchy
+     - Defined responsibilities
+     - Cross-team collaboration
+     - Performance metrics
+3. **Development Rules** (`/development/`)
+   - **Core Documents**:
+     - [tools_and_systems.mdc](mdc:rules/Arclio/development/tools_and_systems.mdc): Technical infrastructure
+     - [best_practices.mdc](mdc:rules/Arclio/development/best_practices.mdc): Coding standards
+   - **Key Principles**:
+     - Code quality
+     - System security
+     - Performance optimization
+     - Documentation requirements
+4. **Finance Rules** (`/finance/`)
+   - **Core Documents**:
+     - [2025_budget_rules.mdc](mdc:rules/Arclio/finance/2025_budget_rules.mdc): Resource allocation
+   - **Key Principles**:
+     - Budget compliance
+     - Cost optimization
+     - Resource tracking
+     - ROI assessment
+5. **Product Rules** (`/product/`)
+   - **Core Documents**:
+     - [arclio_product_rules.mdc](mdc:rules/Arclio/product/arclio_product_rules.mdc): Product standards
+   - **Key Principles**:
+     - User-centric design
+     - Quality assurance
+     - Feature prioritization
+     - Market alignment
+
+### LLM Processing Guidelines
+1. **Initial Assessment**
+   - Analyze query context
+   - Identify primary category
+   - Note cross-category needs
+   - Prepare processing strategy
+
+2. **Rule Application Protocol**
+   - Start with general rules
+   - Apply specific category rules
+   - Consider cross-category impact
+   - Validate against priorities
+
+3. **Response Formation**
+   - Cite relevant rules
+   - Explain reasoning
+   - Provide examples
+   - Note exceptions
+
+### Cross-Category Considerations
+1. **Impact Assessment**
+   - Technical implications
+   - Financial impact
+   - Team dynamics
+   - Product alignment
+
+2. **Conflict Resolution**
+   - Priority determination
+   - Rule precedence
+   - Exception handling
+   - Escalation path
+
+### Rule Update Protocol
+- Version tracking required
+- Change documentation
+- Impact assessment
+- Team notification
+
+Remember: This index serves as your primary navigation tool. Always start here and follow the structured approach to ensure accurate and consistent rule application.
+
+### Quick Reference Tags
+- #SecurityFirst
+- #ComplianceCritical
+- #CrossCategoryImpact
+- #TeamAlignment
+- #ProductQuality
+- #DevelopmentStandards
+- #FinancialControl
+- #OperationalExcellence

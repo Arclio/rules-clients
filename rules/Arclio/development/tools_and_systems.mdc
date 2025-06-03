@@ -1,0 +1,41 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+UV and CICD tools
+
+## Development Tools and Systems Standards
+
+- **Rule Name**: Unified Validation & CI/CD Pipeline Requirements
+- **Description**: Standardized toolchain requirements for all development projects.
+
+### UV (Unit/Validation) Tools
+- **Required Tools**:
+  - Jest for unit testing
+  - Cypress for end-to-end testing
+  - SonarQube for code quality validation
+  - ESLint for code style enforcement
+
+### CI/CD Pipeline Requirements
+- **Mandatory Stages**:
+  1. Code Validation
+     - Linting check
+     - Type checking
+     - Unit test execution (min 90% coverage)
+  
+  2. Build Process
+     - Docker image creation
+     - Artifact versioning
+     
+  3. Deployment Pipeline
+     - Automated staging deployment
+     - Production deployment with manual approval
+     - Rollback capability
+
+- **Monitoring Requirements**:
+  - Pipeline execution metrics
+  - Test coverage reports
+  - Build time optimization
+  
+Remember: All new projects must implement these tool requirements within their first sprint.
