@@ -10,6 +10,7 @@ This rules file contains the rules and operational guidelines for different comp
 
 ## Very important note.
 - All rules end with the `.mdc` extention.
+- Only navigate and or look for the rules of the company that is specified in the query parameter.
 
 ## Directory Structure
 
