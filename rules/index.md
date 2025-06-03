@@ -19,6 +19,7 @@ This directory contains the rules and operational guidelines for different compa
 
 - Arclio
 - 11:11
+- cea
 
 ## Important Note for LLMs
 
