@@ -5,91 +5,60 @@ alwaysApply: false
 ---
 # Tool Usage Guidelines
 
-## Core System Access Protocol
+## Core Tool Policy Rules
 
 - **Rule Name**: Authorized Tool Operations Framework
 - **Description**: Comprehensive guidelines for tool system usage, capabilities, and restrictions within the Arclio environment.
 
-### Authorized Capabilities
-1. **File System Operations**
-   - **Permitted Actions**:
-     - Read operations on workspace files
-     - File creation and modification
-     - Directory listing and navigation
-     - Content deletion within workspace
-   - **Success Criteria**:
-     - Operations confined to workspace
-     - Proper logging of all actions
-     - Version control integration
+### Permitted Operations
+1. **File Management**
+   - ✅ Read and write workspace files
+   - ✅ Create and delete project files
+   - ✅ List and navigate directories
+   - ✅ Execute version control operations
 
-2. **Search Functionality**
-   - **Approved Methods**:
-     - Semantic codebase analysis
-     - Pattern-based regex searches
-     - Fuzzy file matching
-   - **Implementation Requirements**:
-     - Search scope limited to codebase
-     - Performance optimization
-     - Result validation
+2. **Search Capabilities**
+   - ✅ Semantic codebase analysis
+   - ✅ Regex pattern matching
+   - ✅ Fuzzy file discovery
+   - ✅ Directory traversal
 
 3. **Terminal Access**
-   - **Authorized Operations**:
-     - Pre-approved command execution
-     - Monitored background processes
-   - **Control Measures**:
-     - Command whitelisting
-     - Process monitoring
-     - Audit logging
+   - ✅ Pre-approved command execution
+   - ✅ Authorized background processes
+   - ✅ Workspace-scoped operations
+   - ✅ Logged command history
 
-### Restricted Operations Matrix
-1. **System Restrictions**
-   | Operation Type | Status | Reason |
-   |----------------|---------|---------|
-   | External System Access | ❌ Prohibited | Security Risk |
-   | System Settings | ❌ Prohibited | Stability |
-   | Software Installation | ❌ Prohibited | Compliance |
-   | Network Resources | ❌ Prohibited | Data Protection |
+### Restricted Operations
+1. **System Boundaries**
+   - ❌ External system access
+   - ❌ System configuration changes
+   - ❌ Global software installation
+   - ❌ Network resource manipulation
 
-2. **Security Boundaries**
-   - **Strict Prohibitions**:
-     - Sensitive configuration access
-     - Unauthorized command execution
-     - Security measure bypassing
-     - Unapproved API access
+2. **Security Protocol**
+   - ❌ Sensitive file access
+   - ❌ Unauthorized command execution
+   - ❌ Security bypass attempts
+   - ❌ Unapproved API access
 
 3. **Data Protection**
-   - **Access Restrictions**:
-     - Direct database operations
-     - Production environment access
-     - User data modifications
-     - Unauthorized migrations
-
-4. **Environment Control**
-   - **Prohibited Actions**:
-     - Environment variable modification
-     - System path alterations
-     - Global package installation
-     - Dependency structure changes
+   - ❌ Direct database manipulation
+   - ❌ Production data access
+   - ❌ Unauthorized data migration
+   - ❌ User data modification
 
 ### Compliance Requirements
-1. **Mandatory Protocols**
-   - Workspace-only operations
-   - Pre-approval for commands
-   - Complete action logging
-   - Privacy protection
-
-2. **Security Measures**
-   - Policy compliance verification
-   - System integrity checks
-   - Audit trail maintenance
-   - Data protection enforcement
+- **Workspace Scope**: All operations must remain within designated workspace
+- **Authorization**: Changes require proper authentication and logging
+- **Documentation**: All operations must maintain audit trail
+- **Privacy**: Strict adherence to data protection protocols
 
 ### Implementation Checklist
-- [ ] Verify operation scope
-- [ ] Check authorization level
-- [ ] Confirm logging status
-- [ ] Validate security compliance
-- [ ] Monitor execution
-- [ ] Document outcomes
+- [ ] Verify operation is within permitted scope
+- [ ] Confirm proper authorization
+- [ ] Check for security compliance
+- [ ] Document all actions
+- [ ] Monitor for unexpected behavior
 
-Remember: Security and compliance are foundational. When uncertain about permissions, always escalate to system administrators.
+Remember: Security and compliance are non-negotiable. When in doubt, escalate to system administrators.

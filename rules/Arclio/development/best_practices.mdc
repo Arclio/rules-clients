@@ -3,8 +3,6 @@ description:
 globs: 
 alwaysApply: false
 ---
-YOLO
-
 ## Code Review Best Practices
 
 - **Rule Name**: "You Only Launch Once" (YOLO) Principle

@@ -3,8 +3,6 @@ description:
 globs: 
 alwaysApply: false
 ---
-UV and CICD tools
-
 ## Development Tools and Systems Standards
 
 - **Rule Name**: Unified Validation & CI/CD Pipeline Requirements
