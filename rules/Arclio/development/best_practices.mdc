@@ -1,1 +1,23 @@
-new rule
+---
+description: 
+globs: 
+alwaysApply: false
+---
+## Code Review Best Practices
+
+- **Rule Name**: "You Only Launch Once" (YOLO) Principle
+- **Description**: Despite the playful name, this principle emphasizes thorough testing and validation before any production deployment.
+- **Guidelines**:
+  1. All code must pass through at least two peer reviews before deployment
+  2. Maintain a comprehensive test coverage of at least 85%
+  3. Perform a full integration test suite run before merging to main
+  4. Document all assumptions and edge cases in the code
+  
+- **Implementation Checklist**:
+  - [ ] Unit tests written and passing
+  - [ ] Integration tests completed
+  - [ ] Security scan performed
+  - [ ] Performance impact assessed
+  - [ ] Documentation updated
+  
+Remember: While "YOLO" sounds casual, in our development context it means "deploy with confidence because you've done all the necessary preparation."
