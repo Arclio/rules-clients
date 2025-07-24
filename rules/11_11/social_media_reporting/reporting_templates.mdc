@@ -1,0 +1,71 @@
+---
+description: Report templates for Paris Hilton brand social performance
+version: 1.0.0
+owner: 11:11 Media Social Team
+---
+
+## Weekly Report Template
+
+🌟 **Weekly Sliving Performance** - [date_range]
+
+📊 **Key Metrics:**
+- Engagement: [total] ([change]% vs last week)
+- Sliving Content Rate: [rate]% ([trend])
+- Cross-Platform Reach: [reach] ([growth]%)
+- Partnership Performance: [partnership_rate]%
+
+🏆 **Top Sliving Moments:**
+1. [post] - [engagement] ([platform]) - [success_factor]
+2. [post] - [engagement] ([platform]) - [success_factor]  
+3. [post] - [engagement] ([platform]) - [success_factor]
+
+🎯 **Insights:** [AI_insights]
+
+📈 **Next Week Focus:** [recommendations]
+
+## Monthly Report Template
+
+✨ **Monthly Sliving Empire Review** - [month] [year]
+
+🌟 **Executive Summary:** [summary]
+
+📱 **Platform Performance:**
+- Instagram: [metrics]
+- TikTok: [metrics]
+- Cross-Platform: [metrics]
+
+💼 **Business Impact:**
+- Content-to-Commerce: [impact]
+- Partnership ROI: [roi]
+- Audience Growth: [growth]
+
+🎭 **Brand Analysis:**
+- Philosophy Resonance: [score]
+- Authenticity Score: [score]
+- Multi-Gen Appeal: [breakdown]
+
+🔮 **Strategic Recommendations:** [recommendations]
+
+## Slack Alert Templates
+
+### Critical Alert
+🚨 **BRAND ALERT**  
+Issue: [issue]  
+Impact: [impact]  
+Action: [action_needed]  
+Team: @social-team @partnerships
+
+### Opportunity Alert
+💡 **OPPORTUNITY**  
+Trend: [trend]  
+Performance: [metrics]  
+Recommendation: [action]  
+Confidence: [level]  
+Team: @content-team
+
+### Partnership Alert
+⚠️ **PARTNERSHIP UPDATE**  
+Partner: [brand]  
+Performance: [rate] ([vs_benchmark])  
+Action: [recommendation]  
+Team: @partnerships @social-team

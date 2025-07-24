@@ -1,0 +1,46 @@
+---
+description: AI insight generation patterns for Paris Hilton brand
+version: 1.0.0
+owner: 11:11 Media Analytics Team
+---
+
+## Content Performance Insights
+
+### High-Performing Content Detection
+**Trigger:** Content engagement >150% of average
+**Insight:** "Content type '[type]' showing exceptional performance. Recommend increasing frequency by [percentage]%."
+**Confidence:** HIGH if 5+ posts, MEDIUM if 3-4 posts
+
+### Partnership Optimization
+**Trigger:** Partnership content <2.5% engagement AND organic content >3.5%
+**Insight:** "Partnership content underperforming by [difference]%. Review brand alignment with 'Sliving' philosophy."
+**Confidence:** HIGH
+
+### Cross-Platform Amplification
+**Trigger:** Platform A engagement >150% average, Platform B <75% average
+**Insight:** "Successful [platform A] content could be adapted for [platform B]."
+**Confidence:** MEDIUM
+
+## Audience Insights
+
+### Multi-Generational Appeal
+**Trigger:** Gen Z >4%, Millennials >3%, Parents >2% engagement
+**Insight:** "Content successfully engaging all demographics. Maintain diverse content strategy."
+**Confidence:** HIGH
+
+### Sliving Philosophy Resonance  
+**Trigger:** Sliving-tagged content >130% average engagement
+**Insight:** "'Sliving' messaging resonating strongly. Increase philosophy integration."
+**Confidence:** HIGH
+
+## Business Impact Insights
+
+### Content-to-Commerce Performance
+**Trigger:** Product launch content >4% engagement + traffic spike >150%
+**Insight:** "Social content effectively driving 11:11 Media business goals."
+**Confidence:** HIGH
+
+### Partnership ROI
+**Trigger:** Partnership clicks >120% industry benchmark
+**Insight:** "Partnership format exceeding benchmarks. Replicate successful elements."
+**Confidence:** HIGH
