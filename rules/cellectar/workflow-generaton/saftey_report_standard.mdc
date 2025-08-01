@@ -16,15 +16,13 @@ dependencies:
 
 ### Required Table Structure
 
-```
-System Organ Class | Grade 1 | Grade 2 | Grade 3 | Grade 4 | Grade 5 | Any Grade
-Preferred Term | n (%) | n (%) | n (%) | n (%) | n (%) | n (%)
-| | | | | |
-Blood and lymphatic system disorders | XX (XX.X)
-Thrombocytopenia | X (X.X) | X (X.X) | X (X.X) | X (X.X) | X (X.X) | XX (XX.X)
-Neutropenia | X (X.X) | X (X.X) | X (X.X) | X (X.X) | X (X.X) | XX (XX.X)
-Anemia | X (X.X) | X (X.X) | X (X.X) | X (X.X) | X (X.X) | XX (XX.X)
-```
+| System Organ Class                         | Grade 1   | Grade 2   | Grade 3   | Grade 4   | Grade 5   | Any Grade |
+|--------------------------------------------|-----------|-----------|-----------|-----------|-----------|-----------|
+| **Preferred Term**                         | n (%)     | n (%)     | n (%)     | n (%)     | n (%)     | n (%)     |
+| Blood and lymphatic system disorders       | XX (XX.X) |           |           |           |           |           |
+| Thrombocytopenia                           | X (X.X)   | X (X.X)   | X (X.X)   | X (X.X)   | X (X.X)   | XX (XX.X) |
+| Neutropenia                                | X (X.X)   | X (X.X)   | X (X.X)   | X (X.X)   | X (X.X)   | XX (XX.X) |
+| Anemia                                     | X (X.X)   | X (X.X)   | X (X.X)   | X (X.X)   | X (X.X)   | XX (XX.X) |
 
 
 
@@ -36,13 +34,11 @@ Anemia | X (X.X) | X (X.X) | X (X.X) | X (X.X) | X (X.X) | XX (XX.X)
 
 ### Report Header Standards
 
-```
 Study: [Protocol Number]
 Population: Safety Population (N=[total])
 Analysis Date: [YYYY-MM-DD]
 MedDRA Version: [X.X]
 CTCAE Version: 5.0
-```
 
 
 ## Narrative Summary Guidelines
@@ -54,13 +50,10 @@ CTCAE Version: 5.0
 3. Serious adverse events and dose modifications
 
 ### Key Safety Findings Template
-
-```
 "In the safety population (N=[X]), the most frequently reported adverse events were
 hematologic toxicities, with thrombocytopenia occurring in [X]% ([n/N]) of patients
 and neutropenia in [X]% ([n/N]) of patients. Grade 3-4 hematologic toxicities
 occurred in [X]% of patients, leading to dose modifications in [X]% of cases."
-```
 
 
 ### Prohibited Language
