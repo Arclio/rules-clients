@@ -1,0 +1,366 @@
+This is a comprehensive, detailed workflow for generating the adverse events report. This workflow includes:
+
+**Key Features:**
+- **16 detailed steps** from data loading to final report generation
+- **Structured parameters** that automation tools can consume
+- **Validation checks** at each critical step
+- **Error handling** strategies
+- **Business logic implementation** for clinical trial requirements
+
+**Critical Clinical Trial Requirements Addressed:**
+1. **Subject filtering** - Excludes subjects with '2' immediately after dash
+2. **Treatment-emergent AEs** - Only includes AEs starting on/after first infusion date
+3. **Dose conversion** - Megabecquerel to millicurie conversion
+4. **mITT population** - Based on >60 mCi threshold
+5. **Worst grade selection** - Handles multiple grades per subject-event
+6. **Causality hierarchy** - Prioritizes "definitely" over "unrelated"
+7. **Statistical calculations** - Proper N and percentage calculations
+
+**Tool-Ready Structure:**
+Each step includes:
+- Clear action types (filter_data, aggregate_data, merge_tables, etc.)
+- Specific parameters with values
+- Expected outputs and validation criteria
+- Error handling instructions
+- SQL equivalents where applicable
+
+This workflow can be directly consumed by automation tools to generate the adverse events report consistently and accurately. The structure allows for easy modification and extension for future requirements.
+
+```
+{
+  "workflow_name": "Adverse Events Report Generation",
+  "description": "Generate a comprehensive adverse events report for clinical trial data with treatment-emergent adverse events analysis",
+  "input_requirements": {
+    "excel_file_path": "./data/all_data.xlsx",
+    "required_sheets": ["raw", "dosing_info"],
+    "subject_pattern": "xxxx-2xx (exclude subjects with '2' after dash)"
+  },
+  "steps": [
+    {
+      "step_number": 1,
+      "step_name": "Load and Validate Data",
+      "description": "Load Excel file and validate sheet structure",
+      "action": "data_load",
+      "parameters": {
+        "file_path": "./data/all_data.xlsx",
+        "sheets_to_load": ["raw", "dosing_info"],
+        "validation_required": true
+      },
+      "expected_output": "Loaded data tables with schema validation",
+      "error_handling": "Stop workflow if sheets are missing or corrupted"
+    },
+    {
+      "step_number": 2,
+      "step_name": "Filter Subject Pattern",
+      "description": "Filter subjects from raw sheet matching pattern xxxx-2xx (exclude subjects with '2' immediately after dash)",
+      "action": "filter_data",
+      "parameters": {
+        "source_table": "raw",
+        "filter_type": "regex_exclude",
+        "column": "Subject",
+        "pattern": "^[0-9]{4}-2[0-9]{2}$",
+        "operation": "exclude_matching"
+      },
+      "expected_output": "Filtered raw data excluding subjects with '2' after dash",
+      "validation": "Verify subject count reduction"
+    },
+    {
+      "step_number": 3,
+      "step_name": "Select Required Columns from Raw Data",
+      "description": "Keep only required columns from raw sheet",
+      "action": "select_columns",
+      "parameters": {
+        "source_table": "raw_filtered",
+        "columns_to_keep": [
+          "Subject",
+          "AEYN",
+          "AETERM_SOC",
+          "AETERM_PT", 
+          "AETERM",
+          "AESTDAT",
+          "AEENDAT",
+          "CTCAE",
+          "SERIOUS",
+          "RELCLR",
+          "OUTCOME",
+          "RELTPM"
+        ]
+      },
+      "expected_output": "Raw data with selected columns only",
+      "validation": "Confirm all required columns are present"
+    },
+    {
+      "step_number": 4,
+      "step_name": "Aggregate Dosing Information",
+      "description": "Sum total doses (TTLDOSE) for each subject from dosing_info sheet",
+      "action": "aggregate_data",
+      "parameters": {
+        "source_table": "dosing_info",
+        "group_by_column": "Subject",
+        "aggregation": {
+          "TTLDOSE": "sum"
+        },
+        "output_columns": ["Subject", "TTLDOSE_total"]
+      },
+      "expected_output": "Subject-level total doses",
+      "validation": "Verify no negative or null dose values"
+    },
+    {
+      "step_number": 5,
+      "step_name": "Convert Dose Units",
+      "description": "Convert TTLDOSE from megabecquerel to millicurie",
+      "action": "unit_conversion",
+      "parameters": {
+        "source_table": "dosing_aggregated",
+        "column": "TTLDOSE_total",
+        "conversion_factor": 0.027027027,
+        "from_unit": "megabecquerel",
+        "to_unit": "millicurie",
+        "new_column_name": "TTLDOSE_mCi"
+      },
+      "expected_output": "Doses converted to millicuries",
+      "formula": "millicurie = megabecquerel × 0.027027027"
+    },
+    {
+      "step_number": 6,
+      "step_name": "Calculate mITT Flag",
+      "description": "Create mITT column based on total dose threshold",
+      "action": "create_calculated_column",
+      "parameters": {
+        "source_table": "dosing_converted",
+        "new_column": "mITT",
+        "calculation_type": "conditional",
+        "condition": "TTLDOSE_mCi > 60",
+        "value_if_true": "YES",
+        "value_if_false": "NO"
+      },
+      "expected_output": "mITT classification for each subject",
+      "sql_equivalent": "CASE WHEN TTLDOSE_mCi > 60 THEN 'YES' ELSE 'NO' END AS mITT"
+    },
+    {
+      "step_number": 7,
+      "step_name": "Merge Raw and Dosing Data",
+      "description": "Join filtered raw data with dosing information",
+      "action": "merge_tables",
+      "parameters": {
+        "left_table": "raw_selected_columns",
+        "right_table": "dosing_with_mITT",
+        "join_type": "inner",
+        "join_column": "Subject",
+        "output_table": "merged_data"
+      },
+      "expected_output": "Combined dataset with AE and dosing information",
+      "validation": "Verify no data loss in merge"
+    },
+    {
+      "step_number": 8,
+      "step_name": "Get First Infusion Date",
+      "description": "Identify first infusion date (CLRSTDAT) for each subject",
+      "action": "aggregate_data",
+      "parameters": {
+        "source_table": "dosing_info",
+        "group_by_column": "Subject",
+        "aggregation": {
+          "CLRSTDAT": "min"
+        },
+        "output_columns": ["Subject", "first_infusion_date"]
+      },
+      "expected_output": "First infusion date per subject",
+      "validation": "Ensure dates are valid and not null"
+    },
+    {
+      "step_number": 9,
+      "step_name": "Filter Treatment-Emergent AEs",
+      "description": "Remove AEs that started before first infusion date",
+      "action": "filter_data",
+      "parameters": {
+        "source_table": "merged_with_infusion_dates",
+        "filter_type": "date_comparison",
+        "condition": "AESTDAT >= first_infusion_date",
+        "date_columns": ["AESTDAT", "first_infusion_date"]
+      },
+      "expected_output": "Treatment-emergent adverse events only",
+      "validation": "Verify AE count reduction"
+    },
+    {
+      "step_number": 10,
+      "step_name": "Determine Worst Grade per Subject-Event",
+      "description": "For each subject-event combination, keep only the worst CTCAE grade",
+      "action": "aggregate_data",
+      "parameters": {
+        "source_table": "treatment_emergent_aes",
+        "group_by_columns": ["Subject", "AETERM_SOC", "AETERM_PT"],
+        "aggregation": {
+          "CTCAE": "max"
+        },
+        "keep_associated_data": true,
+        "tie_breaker_column": "RELCLR",
+        "tie_breaker_hierarchy": ["definitely", "probably", "possibly", "unlikely", "unrelated"]
+      },
+      "expected_output": "Worst grade per subject-event with causality hierarchy",
+      "validation": "Verify no duplicate subject-event combinations"
+    },
+    {
+      "step_number": 11,
+      "step_name": "Apply Causality Hierarchy",
+      "description": "For same-grade events, prioritize based on RELCLR hierarchy",
+      "action": "apply_hierarchy",
+      "parameters": {
+        "source_table": "worst_grade_aes",
+        "hierarchy_column": "RELCLR",
+        "hierarchy_order": ["definitely", "probably", "possibly", "unlikely", "unrelated"],
+        "group_by_columns": ["Subject", "AETERM_SOC", "AETERM_PT", "CTCAE"],
+        "exclude_if_others_present": "unrelated"
+      },
+      "expected_output": "Final AE dataset with causality prioritization",
+      "business_rule": "If 'unrelated' exists with any other causality, exclude 'unrelated'"
+    },
+    {
+      "step_number": 12,
+      "step_name": "Calculate Total mITT Population",
+      "description": "Count total number of subjects with mITT = 'YES'",
+      "action": "aggregate_data",
+      "parameters": {
+        "source_table": "final_ae_dataset",
+        "filter_condition": "mITT = 'YES'",
+        "aggregation": {
+          "Subject": "count_distinct"
+        },
+        "output_name": "total_mITT_N"
+      },
+      "expected_output": "Total N for mITT population",
+      "validation": "Store N value for percentage calculations"
+    },
+    {
+      "step_number": 13,
+      "step_name": "Calculate Event Counts by SOC and Grade",
+      "description": "Count subjects for each AETERM_SOC and CTCAE grade combination",
+      "action": "aggregate_data",
+      "parameters": {
+        "source_table": "final_ae_dataset",
+        "group_by_columns": ["AETERM_SOC", "CTCAE"],
+        "aggregation": {
+          "Subject": "count_distinct"
+        },
+        "output_columns": ["AETERM_SOC", "CTCAE", "n_subjects"],
+        "include_rollup": true
+      },
+      "expected_output": "Subject counts by SOC and grade with subtotals",
+      "sql_equivalent": "SELECT AETERM_SOC, CTCAE, COUNT(DISTINCT Subject) AS n FROM final_ae_dataset GROUP BY AETERM_SOC, CTCAE WITH ROLLUP"
+    },
+    {
+      "step_number": 14,
+      "step_name": "Calculate Percentages",
+      "description": "Calculate percentage of subjects for each event category",
+      "action": "create_calculated_column",
+      "parameters": {
+        "source_table": "event_counts",
+        "new_column": "percentage",
+        "calculation_type": "percentage",
+        "numerator_column": "n_subjects",
+        "denominator_value": "total_mITT_N",
+        "decimal_places": 1
+      },
+      "expected_output": "Event percentages relative to mITT population",
+      "formula": "percentage = (n_subjects / total_mITT_N) × 100"
+    },
+    {
+      "step_number": 15,
+      "step_name": "Format Final Report",
+      "description": "Create formatted report with all required columns",
+      "action": "format_report",
+      "parameters": {
+        "source_table": "event_counts_with_percentages",
+        "report_columns": [
+          "AETERM_SOC",
+          "CTCAE",
+          "n_subjects",
+          "percentage",
+          "total_mITT_N"
+        ],
+        "sort_order": ["AETERM_SOC", "CTCAE"],
+        "formatting": {
+          "percentage": "decimal_1",
+          "headers": "title_case"
+        }
+      },
+      "expected_output": "Final formatted adverse events report",
+      "validation": "Verify all percentages sum correctly"
+    },
+    {
+      "step_number": 16,
+      "step_name": "Generate Output Files",
+      "description": "Export final report in required formats",
+      "action": "export_data",
+      "parameters": {
+        "source_table": "final_report",
+        "output_formats": ["excel", "csv"],
+        "file_naming": {
+          "prefix": "adverse_events_report",
+          "timestamp": true,
+          "suffix": "mITT_population"
+        },
+        "include_metadata": true
+      },
+      "expected_output": "Report files ready for distribution",
+      "deliverables": [
+        "adverse_events_report_[timestamp]_mITT_population.xlsx",
+        "adverse_events_report_[timestamp]_mITT_population.csv"
+      ]
+    }
+  ],
+  "validation_checks": [
+    {
+      "check_name": "Data Integrity",
+      "validation_points": [
+        "No negative doses",
+        "Valid date formats",
+        "Required columns present",
+        "No duplicate subject-event combinations in final dataset"
+      ]
+    },
+    {
+      "check_name": "Business Logic",
+      "validation_points": [
+        "mITT calculation correct (>60 mCi)",
+        "Treatment-emergent definition applied",
+        "Causality hierarchy respected",
+        "Worst grade selection accurate"
+      ]
+    },
+    {
+      "check_name": "Statistical Accuracy",
+      "validation_points": [
+        "Percentages sum to expected totals",
+        "N values consistent across calculations",
+        "No missing data in critical fields"
+      ]
+    }
+  ],
+  "error_handling": {
+    "missing_data": "Flag missing values and provide counts",
+    "invalid_dates": "Convert to standard format or flag for review",
+    "calculation_errors": "Stop workflow and provide detailed error message",
+    "merge_failures": "Report unmatched records and continue with available data"
+  },
+  "output_specifications": {
+    "primary_output": "Adverse events summary by SOC and grade",
+    "secondary_outputs": [
+      "Subject-level mITT classifications",
+      "Treatment-emergent AE listings",
+      "Data quality summary"
+    ],
+    "report_format": {
+      "title": "Treatment-Emergent Adverse Events by System Organ Class and Grade",
+      "subtitle": "mITT Population Analysis",
+      "columns": [
+        "System Organ Class (AETERM_SOC)",
+        "CTCAE Grade",
+        "Number of Subjects (n)",
+        "Percentage (%)",
+        "Total mITT Population (N)"
+      ]
+    }
+  }
+}
+```
