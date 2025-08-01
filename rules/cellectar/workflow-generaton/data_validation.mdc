@@ -1,0 +1,53 @@
+---
+description: Clinical Data Validation Requirements
+version: 1.0.0
+owner: Data Management
+dependencies:
+  - @clinical/safety_reporting_standards.mdc
+---
+# Clinical Data Validation Rules
+
+## Pre-Analysis Validation
+
+### Dataset Verification
+**MANDATORY CHECKS**:
+1. Verify safety population count matches expected enrollment
+2. Confirm patient IDs are unique and complete
+3. Validate adverse event coding against MedDRA
+4. Check grade assignments follow CTCAE v5.0
+
+### Data Quality Gates
+**Analysis CANNOT proceed unless**:
+- Patient count > 0
+- All adverse events have valid MedDRA codes
+- All grades are within valid range (1-5)
+- No duplicate patient records in safety population
+
+### Population Validation
+If `safety_population_count != expected_enrollment`:
+  - STOP_ANALYSIS
+  - Alert: "Population mismatch detected"
+  - Require manual review
+
+If `any_patient_missing_treatment_exposure`:
+  - EXCLUDE from safety population
+  - Document exclusion rationale
+
+## Statistical Validation
+
+### Incidence Rate Validation
+For each adverse event:
+  - Calculate `patient_incidence = (patients_with_event / safety_population) × 100`
+  
+  If `patient_incidence > 100`:
+    - ERROR: "Invalid calculation detected"
+    - STOP_ANALYSIS
+    
+  If `sum_of_grade_percentages != total_incidence`:
+    - ERROR: "Grade distribution error"
+    - REQUIRE_RECALCULATION
+
+### Cross-Validation Checks
+- Verify thrombocytopenia + neutropenia rates align with hematologic toxicity profile
+- Check that Grade 4-5 events align with serious adverse event rates
+- Validate dose modifications correlate with toxicity grades

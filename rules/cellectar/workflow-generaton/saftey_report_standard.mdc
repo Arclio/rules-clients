@@ -1,0 +1,98 @@
+---
+description: Clinical Safety Report Template and Format Standards
+version: 1.0.0
+owner: Clinical Operations
+applies_to: 
+  - safety_report_generation
+  - regulatory_submissions
+dependencies:
+  - @clinical/safety_reporting_standards.mdc
+  - @regulatory/compliance_requirements.mdc
+  - @templates/regulatory_table_formats.mdc
+---
+# Safety Report Generation Standards
+
+## Table 14.3.1: Summary of Treatment-Emergent Adverse Events
+
+### Required Table Structure
+
+```
+System Organ Class | Grade 1 | Grade 2 | Grade 3 | Grade 4 | Grade 5 | Any Grade
+Preferred Term | n (%) | n (%) | n (%) | n (%) | n (%) | n (%)
+| | | | | |
+Blood and lymphatic system disorders | XX (XX.X)
+Thrombocytopenia | X (X.X) | X (X.X) | X (X.X) | X (X.X) | X (X.X) | XX (XX.X)
+Neutropenia | X (X.X) | X (X.X) | X (X.X) | X (X.X) | X (X.X) | XX (XX.X)
+Anemia | X (X.X) | X (X.X) | X (X.X) | X (X.X) | X (X.X) | XX (XX.X)
+```
+
+
+
+### Table Footnotes (Required)
+- Safety population: N = [total patients]
+- Patients are counted once per preferred term at worst grade
+- Grading per CTCAE v5.0
+- MedDRA version [X.X] coding
+
+### Report Header Standards
+
+```
+Study: [Protocol Number]
+Population: Safety Population (N=[total])
+Analysis Date: [YYYY-MM-DD]
+MedDRA Version: [X.X]
+CTCAE Version: 5.0
+```
+
+
+## Narrative Summary Guidelines
+
+### Executive Summary Format
+**Maximum 3 paragraphs**:
+1. Overall safety profile summary
+2. Most frequent adverse events (≥20% incidence)
+3. Serious adverse events and dose modifications
+
+### Key Safety Findings Template
+
+```
+"In the safety population (N=[X]), the most frequently reported adverse events were
+hematologic toxicities, with thrombocytopenia occurring in [X]% ([n/N]) of patients
+and neutropenia in [X]% ([n/N]) of patients. Grade 3-4 hematologic toxicities
+occurred in [X]% of patients, leading to dose modifications in [X]% of cases."
+```
+
+
+### Prohibited Language
+- "Events occurred" (use "patients experienced")
+- "Total number of events" (use "patient incidence")
+- "Event rate" (use "incidence rate")
+- "Frequency of occurrence" (use "percentage of patients")
+
+## Conditional Content
+
+If `dose_modification_rate > 30%`:
+  - Include detailed dose modification analysis table
+  
+If `treatment_discontinuation_rate > 20%`:
+  - Include discontinuation reasons by preferred term
+  
+If `any_grade_5_events`:
+  - Include individual patient narratives
+  - Include causality assessment summary
+
+## Quality Check Requirements
+
+### Pre-Release Validation
+**MANDATORY CHECKS**:
+1. All percentages sum correctly within SOC
+2. Patient counts never exceed safety population
+3. Grade distribution mathematically consistent
+4. No event-level language in patient-level tables
+5. Regulatory format compliance verified
+
+### Review Requirements
+- Clinical review by qualified physician
+- Statistical review by biostatistician  
+- Regulatory review for submission compliance
+- Data management verification of source data

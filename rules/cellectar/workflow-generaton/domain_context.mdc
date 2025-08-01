@@ -1,0 +1,42 @@
+---
+description: Clinical Trial Domain Expertise and Context
+version: 1.0.0
+owner: Clinical Development
+applies_to: 
+  - clinical_trial_analysis
+  - safety_assessment
+  - efficacy_reporting
+dependencies:
+  - @clinical/safety_reporting_standards.mdc
+  - @regulatory/compliance_requirements.mdc
+---
+# Clinical Trial Domain Context
+
+## Oncology-Specific Requirements
+
+### Cellectar Biosciences Context
+**Drug Profile**: Targeted radiopharmaceutical therapy  
+**Expected Toxicity Profile**: 
+- Hematologic toxicities (thrombocytopenia, neutropenia)
+- Radiation-related effects
+- Delayed onset toxicities
+
+### Hematologic Toxicity Monitoring
+**Critical Safety Signals**:
+- Thrombocytopenia (expected in >80% of patients)
+- Neutropenia (expected in >70% of patients)
+- Anemia (common secondary effect)
+
+**Reporting Standards**:
+- Weekly CBC monitoring required
+- Nadir values must be captured
+- Recovery time documentation essential
+
+### Dose Modification Correlation
+If `Grade_3_4_hematologic_toxicity > 50%`:
+  - Include dose modification analysis
+  - Correlate with efficacy endpoints
+  
+If `treatment_discontinuation_rate > 30%`:
+  - Provide detailed causality assessment
+  - Include alternative dosing recommendations

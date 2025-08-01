@@ -1,0 +1,73 @@
+---
+description: FDA/EMA Regulatory Compliance for Safety Reporting
+version: 1.0.0
+owner: Regulatory Affairs
+applies_to: 
+  - fda_submissions
+  - ema_submissions
+  - regulatory_safety_reports
+dependencies:
+  - @clinical/safety_reporting_standards.mdc
+  - @compliance/ich_guidelines.mdc
+---
+# Regulatory Compliance Requirements
+
+## FDA Requirements (21 CFR Part 312)
+
+### Safety Table Format
+**Required Elements**:
+- System Organ Class organization
+- Preferred Term specification
+- Patient incidence rates with numerator/denominator
+- Grade distribution for applicable events
+- "Any Grade" summary column
+
+**Prohibited Elements**:
+- Event-level counting
+- Narrative safety summaries in tabular submissions
+- Site-specific adverse event rates
+- Interim analysis dates in final tables
+
+### Severity Grading
+**CTCAE v5.0 Required**:
+- Grade 1: Mild
+- Grade 2: Moderate  
+- Grade 3: Severe
+- Grade 4: Life-threatening
+- Grade 5: Death
+
+### Documentation Requirements
+- Patient-level data derivation documented
+- Worst grade methodology specified
+- Population definitions clearly stated
+- Analysis dataset specifications included
+
+## EMA Requirements (ICH E3)
+
+### Clinical Study Report Format
+**Table 14.3.1**: Summary of Adverse Events
+- Must include patient incidence rates
+- System Organ Class organization mandatory
+- Grade distribution for Grade ≥3 events
+- Serious adverse event correlation
+
+### Special Populations
+If `elderly_patients > 30% of population`:
+  - Include age-stratified safety analysis
+  
+If `renal_impairment_patients > 0`:
+  - Include renal function safety correlation
+
+## Conditional Compliance
+
+If `submission_type == "NDA"`:
+  - Apply @regulatory/nda_safety_requirements.mdc
+  - Include integrated safety summary
+
+If `indication == "oncology"`:
+  - Apply @oncology/safety_standards.mdc
+  - Include dose-limiting toxicity assessment
+  
+If `study_duration > 6_months`:
+  - Include time-to-onset analysis
+  - Apply @safety/chronic_exposure_requirements.mdc
