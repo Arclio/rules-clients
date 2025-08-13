@@ -1,0 +1,39 @@
+---
+description: Data validation rules for licensing revenue
+version: 1.0.0
+owner: Licensing Team
+---
+
+## Validation Rules
+### Revenue Amount
+- Minimum: $1,000 (flag if below)
+- Maximum: $50,000,000 (flag if above)
+- Format: Must be numeric, positive
+- Currency: Assume USD unless specified
+
+### Quarter/Year
+- Quarter: Must be Q1, Q2, Q3, or Q4
+- Year: Must be 2020-2030 range
+- Format: "Q1 2024" or "2024 Q1"
+
+### Partner Validation
+- Must match approved partner list
+- Case-insensitive matching
+- Handle common variations (Sony vs Sony Music)
+
+## Business Logic
+### Duplicate Handling
+- Same partner + quarter + year = UPDATE existing record
+- Flag significant revenue changes (>50% difference)
+- Preserve audit trail of changes
+
+### Quality Scoring
+- High confidence (0.9+): All fields extracted cleanly
+- Medium confidence (0.7-0.9): Some manual parsing required
+- Low confidence (<0.7): Requires human review
+
+## Alert Conditions
+- Revenue change >100% from previous quarter
+- New partner not in approved list
+- Extraction confidence <0.7
+- Missing required fields (partner, quarter, revenue)
