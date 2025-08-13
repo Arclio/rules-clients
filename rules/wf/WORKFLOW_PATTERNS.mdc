@@ -1,0 +1,133 @@
+---
+description: "Provides advanced patterns and best practices for designing robust, efficient, and resilient workflows. This rule covers data flow strategies, error handling, iteration, conditional logic, and common pitfalls."
+globs: []
+alwaysApply: false
+---
+## Rule: Advanced Workflow Design Patterns
+
+This rule outlines strategic patterns for designing high-quality, resilient workflows that embrace the engine's core principles of scope isolation and predictable data flow.
+
+### 1.0 The "Guard-then-Iterate" Pattern
+
+**Problem:** A common workflow requirement is to fetch a list of items and then process each one. If the initial fetch returns an empty list, any subsequent `iterator` step would have nothing to do, and steps that try to access items by index (e.g., `items[0]`) would fail.
+
+**Rule:** You **MUST** use a `branch` step to guard an `iterator`. Check if the source array is non-empty before attempting to process it.
+
+-   **Step 1: Fetch Data.** A standard step fetches data and outputs an array.
+    ```markdown
+    **Outputs:**
+      posts_to_process: array = result
+    ```
+-   **Step 2: Guard and Process.** A `branch` step checks the array's `.length` property. The `iterator` logic is placed entirely within the `Then` block. The `Else` block handles the "no data" case.
+
+    ```markdown
+    ## Step 2: Check for Posts and Process
+    **Type:** branch
+    **Condition:** ${step1.posts_to_process.length} > 0
+
+    **Then:**
+      ### Step A: Iterate and Tag Posts
+      # The iterator logic is safely nested inside the 'Then' path.
+      **Type:** iterator
+      **Iterator:**
+        source: ${step1.posts_to_process}
+      # ... iteration logic ...
+
+    **Else:**
+      ### Step B: Log No Posts Found
+      # Handle the empty case explicitly.
+      **Tool:** `logger__log`
+      **Inputs:**
+        message: "No new posts to process."
+    ```
+
+### 2.0 Working with Scope Isolation
+
+**Problem:** A `branch` container's child steps produce outputs, but that data is not available to steps outside the branch. How do you perform actions based on the outcome of a branch?
+
+**Rule:** Logic that depends on the outcome of a specific branch path **MUST** be placed *within* that path.
+
+-   **Self-Contained Paths:** Think of the `Then` and `Else` blocks as independent, self-contained mini-workflows. If a final action like logging or sending a notification is needed, it must be the last step inside both the `Then` and `Else` blocks.
+
+    ```markdown
+    ## Step 3: Branch on Approval Status
+    **Type:** branch
+    **Condition:** ${step2.status} == "approved"
+
+    **Then:**
+      ### Step A: Get Manager Email
+      **Outputs:**
+        manager_email: string = result.email
+
+      ### Step B: Notify Manager of Approval
+      # CORRECT: The notification logic is inside the 'Then' block.
+      **Tool:** `email__send`
+      **Inputs:**
+        to: ${stepA.manager_email}
+        subject: "Approved"
+
+    **Else:**
+      ### Step C: Notify Submitter of Rejection
+      # CORRECT: This path has its own, self-contained logic.
+      **Tool:** `email__send`
+      **Inputs:**
+        to: ${step1.submitter_email}
+        subject: "Rejected"
+    ```
+
+### 3.0 The Two-Step Pattern (for Unreliable Data)
+
+**Problem:** Some tools do not have a guaranteed, stable output schema. Attempting to extract a specific field directly from such a tool is a primary cause of workflow failure.
+
+**Rule:** For any tool whose output schema is unknown, you **MUST** use the Two-Step Pattern to safely extract data.
+
+-   **Step 1: Extract Raw Data.** Call the tool and extract its entire, raw output into a variable of type `any`. This bypasses validation and ensures the data is captured, regardless of its structure.
+    ```markdown
+    **Outputs:**
+      raw_data: any = result
+    ```
+-   **Step 2: Parse with LLM.** Use the `llm` tool to intelligently parse the `raw_data` variable. Instruct the LLM to find and extract the specific fields you need into a structured, validated format.
+    ```markdown
+    **Inputs:**
+      user_prompt: "From this raw data: ${step1.raw_data}, extract the user_id and email."
+    **Outputs:**
+      user_id: integer = user_id
+      email_address: string = email
+    ```
+
+### 4.0 Strategic Error Handling
+
+Use the `on_error` configuration to build resilient workflows that can handle failures gracefully.
+
+-   **Use `fail` (Default):** For critical steps where the workflow cannot logically proceed if the step fails. This is the safest default.
+    -   *Example: Fetching the primary data needed for all subsequent steps.*
+
+-   **Use `continue`:** For non-critical steps where a failure can be tolerated. The step's outputs will be set to `null`, and the workflow will proceed.
+    -   *Example: An optional step that tries to enrich data. If it fails, the rest of the workflow can still run with the original data.*
+
+-   **Use `skip`:** For "fire-and-forget" actions where the outcome or output of the step does not affect subsequent steps. The execution context remains unchanged.
+    -   *Example: Sending a log message to a monitoring service.*
+
+
+### 5.0 Common Pitfalls to Avoid (Anti-Patterns)
+
+1.  **Dangling References (DISALLOWED):** Never reference an output from a step inside a container (`branch` or `iterator`) from a step outside of it. The parser will reject this as an invalid workflow.
+    ```markdown
+    # ANTI-PATTERN: This is invalid and will be rejected.
+    ## Step 2: Branch
+    **Then:**
+      ### Step A:
+      **Outputs:**
+        internal_data: string = result.data
+
+    ## Step 3: Fails
+    # You CANNOT access stepA.internal_data here.
+    **Inputs:**
+      some_param: ${stepA.internal_data}
+    ```
+
+2.  **Unsafe Iteration:** Never pass an array directly to an `iterator` without first checking if it's empty using the "Guard-then-Iterate" pattern.
+
+3.  **Guessing Output Schemas:** For tools without a clear output schema, never try to guess the extraction path (e.g., `result.data.items[0]`). **Always** use the Two-Step Pattern.
+
+4.  **Misusing Container Steps:** Container steps (`iterator`, `branch`) exist only to control flow. They **MUST NOT** have their own `**Tool:**`, `**Inputs:**`, or `**Outputs:**` sections. All actions must be performed by their child steps.

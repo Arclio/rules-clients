@@ -1,0 +1,84 @@
+---
+description: "Defines the roles, capabilities, and specific usage patterns for the tools available in the Arclio Workflow Engine, including MCP tools, the LLM tool, and container steps."
+globs: []
+alwaysApply: true
+---
+## Rule: Workflow Tooling Guide
+
+This rule defines the available tool categories and their appropriate use within a workflow. Using the correct tool for each task is essential for building efficient and reliable workflows.
+
+### 1.0 Tool Categories
+
+The workflow engine provides three primary categories of tools and steps:
+
+1.  **MCP Tools:** For deterministic, external actions.
+2.  **The `llm` Tool:** For reasoning, analysis, and non-deterministic tasks.
+3.  **Container & Transform Steps:** For controlling the flow of execution and performing deterministic data manipulation.
+
+### 2.0 Using MCP Tools
+
+MCP (Model Context Protocol) tools are used to interact with external systems like APIs, databases, and file systems.
+
+**When to Use MCP Tools:**
+-   Fetching data from an external source (e.g., `github__get_pr_diff`, `supabase__execute_sql`).
+-   Writing or updating data in an external system (e.g., `slack__post_message`).
+-   Performing any deterministic, service-specific operation that requires integration with an external platform.
+
+**How to Use MCP Tools:**
+1.  **Tool Name:** The `**Tool:**` directive must match the exact name of the MCP tool.
+2.  **Inputs:** The `**Inputs:**` must match the tool's defined input schema. All required parameters must be provided.
+3.  **Outputs:** The `**Outputs:**` contract must use extraction paths that align with the tool's known output schema. If the schema is unknown, you **must** use the "Two-Step Pattern" defined in `WORKFLOW_PATTERNS.mdc`.
+
+### 3.0 Using the `llm` Tool
+
+The `llm` tool is a specialized, built-in tool that provides access to Large Language Model capabilities for reasoning and analysis.
+
+**When to Use the `llm` Tool:**
+-   Analyzing unstructured or semi-structured data.
+-   Making decisions based on complex or ambiguous criteria.
+-   Generating human-readable text, summaries, or reports.
+-   Parsing and extracting structured data from an unreliable source (as the second step in the "Two-Step Pattern").
+-   Transforming data from one format to another when the logic is non-deterministic or too complex for a `transform` step.
+
+**How to Use the `llm` Tool:**
+1.  **Tool Name:** Set `**Tool:**` to `llm`.
+2.  **Inputs:** Provide `system_prompt` and `user_prompt`. You can also specify `model`, `temperature`, and `rules`.
+3.  **Outputs:** The `**Outputs:**` section for an `llm` tool is unique. It acts as a **direct instruction** to the LLM, defining the exact JSON structure it **must** return. The `extraction_path` should simply be the corresponding key name.
+
+    *Example:*
+    ```markdown
+    **Outputs:**
+      review_summary: string = summary
+      is_approved: boolean = approved
+    ```
+    This instructs the LLM to return a JSON object like: `{"summary": "...", "approved": true}`.
+
+### 4.0 Using Container & Transform Steps
+
+These steps do not execute external tools; they manage the execution of their child steps or perform internal data manipulation.
+
+#### 4.1 `iterator` Step
+
+**Purpose:** To loop over an array and execute a block of child steps for each item, aggregating the results.
+
+**When to Use:**
+-   When processing a list of items returned from a previous step.
+-   To avoid token limits by processing large datasets in smaller, per-item chunks instead of a single `llm` call.
+-   When you need to collect, sum, or select results from multiple parallel operations.
+
+#### 4.2 `branch` Step
+
+**Purpose:** To conditionally execute one of two independent and fully isolated blocks of child steps.
+
+**When to Use:**
+-   When the workflow's logic needs to diverge based on data from a previous step (e.g., `if-then-else`).
+-   To safely check for conditions before proceeding, such as verifying that an array is not empty before an `iterator` (the "Guard-then-Iterate" pattern).
+
+#### 4.3 `transform` Step
+
+**Purpose:** To perform simple, deterministic data cleaning and type conversion. This is a standard step, not a container.
+
+**When to Use:**
+-   When a tool returns data as a string that needs to be parsed into JSON.
+-   When you need to extract a specific substring from a larger block of text using a regular expression.
+-   **CRITICAL:** You **MUST** prefer using a `transform` step over an `llm` call for these tasks. It is significantly faster, cheaper, and more reliable for deterministic operations.
