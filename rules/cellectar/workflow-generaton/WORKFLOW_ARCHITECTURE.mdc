@@ -1,0 +1,67 @@
+---
+description: "Explains the technical architecture of the Cellectar adverse events workflows, detailing the 'Database-First' principle, the 'Two-View' solution, and the deterministic SQL reporting engine."
+globs: []
+alwaysApply: false
+---
+
+## Rule: Cellectar Adverse Events - Workflow Architecture
+
+This rule details the technical architecture and core design patterns of the Cellectar adverse events workflows. It explains the strategic decisions made to ensure the final solution is accurate, robust, and maintainable.
+
+### 1.0 Core Principle: The "Database-First" Approach
+
+The entire data processing pipeline is built on a **"Database-First"** principle. All complex, large-scale data transformations—including filtering, joining, ranking, and aggregation—are executed directly within the PostgreSQL database via `supabase__execute_sql` tool calls.
+
+This approach was chosen for several key reasons:
+-   **Performance:** The database engine is highly optimized for these operations, far outperforming in-memory processing within the workflow engine.
+-   **Data Integrity:** By never moving large, intermediate datasets out of the database, we minimize the risk of data corruption and ensure transactional consistency.
+-   **Scalability:** The database is designed to handle datasets far larger than the workflow engine's memory or payload limits can support.
+
+### 2.0 The "Two-View" Solution for Data Integrity
+
+The cornerstone of this architecture is the use of two distinct, specialized database views. This pattern was designed specifically to solve the critical issue of data contamination that plagued earlier versions of the workflow, where the patient population count (`N`) was incorrectly influenced by adverse event data.
+
+#### 2.1 **`v_subject_populations`**: The Source of Truth for the Cohort
+
+This view's only responsibility is to define the patient cohort.
+-   **Inputs:** It reads **only** from the `dosing_info` table.
+-   **Logic:** It performs the two foundational filtering steps:
+    1.  Filters for the **"Part B" patient cohort**.
+    2.  Calculates the total dose for each patient, applying the **conditional unit conversion** (`mCi` vs `MBq`).
+-   **Outputs:** A clean roster of all relevant patients, their total dose, and their status in the `mITT` and `Safety` populations.
+-   **Architectural Guarantee:** Because this view is completely isolated from the `raw_adverse_events` table, it provides a 100% accurate and stable denominator (`N`) for all statistical calculations.
+
+#### 2.2 **`v_ranked_treatment_emergent_aes`**: The Source of Truth for Events
+
+This view's responsibility is to produce a clean, ranked list of all relevant adverse events.
+-   **Inputs:** It reads from the `raw_adverse_events` table and joins against the `v_subject_populations` view.
+-   **Logic:** It applies the complex event-level business rules:
+    1.  **Data Sanitization:** Applies `TRIM()` to key text fields to prevent errors from whitespace.
+    2.  **Treatment-Emergent Filter:** Discards events that occurred before the first dose.
+    3.  **Single Worst Grade (SWG) Selection:** Uses a `ROW_NUMBER()` window function to select the single most severe event per type for each patient.
+-   **Architectural Guarantee:** This view provides a definitive, pre-processed list of every event that is eligible to be counted in the final report, perfectly replicating the client's manual SWG selection process.
+
+### 3.0 The Deterministic Reporting Engine
+
+A primary project requirement was to achieve 100% precision, which is unsuitable for a non-deterministic LLM. The final, complex aggregation step was therefore engineered as a single, advanced SQL query that replaces the LLM entirely.
+
+This query takes the pre-calculated `N` as a parameter and performs the final report generation by:
+1.  **Calculating SOC Summaries:** It correctly calculates the **System Organ Class (SOC)** summary rows by counting the number of *unique subjects* within each class, fulfilling a complex business requirement.
+2.  **Calculating PT Details:** It calculates the counts and percentages for each individual **Preferred Term (PT)**.
+3.  **Formatting and Ordering:** It uses `UNION ALL` to combine the SOC and PT rows, indents the PT rows with leading spaces, and formats all numbers and percentages into the required string format (`"n (x.x%)"`).
+4.  **`json_agg` Output:** The entire result set is wrapped in a `json_agg` call, which instructs the database to return a single JSON object containing a perfectly formed array of arrays, ready for direct use by the Google Sheets tool.
+
+### 4.0 Conceptual Data Flow
+
+The entire process can be visualized with the following data flow:
+
+```mermaid
+graph TD
+    A[Raw Table: dosing_info] --> B{View: v_subject_populations};
+    C[Raw Table: raw_adverse_events] --> D{View: v_ranked_treatment_emergent_aes};
+    B --> D;
+    B --> E[Step 3: Calculate N];
+    D --> F[Step 8: Final SQL Aggregation];
+    E --> F;
+    F --> G[Step 10: Append to Google Sheet];
+```

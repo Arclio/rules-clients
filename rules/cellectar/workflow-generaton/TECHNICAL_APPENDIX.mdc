@@ -1,0 +1,65 @@
+---
+description: "A technical glossary defining key terms, data fields, and concepts for the Cellectar adverse events project. Serves as a definitive reference for understanding the workflow's data and logic."
+globs: []
+alwaysApply: false
+---
+
+## Rule: Cellectar Adverse Events - Technical Appendix & Glossary
+
+This rule provides precise definitions for the technical terms, data fields, and core concepts used in the Cellectar adverse events reporting workflows.
+
+### 1.0 Data Field Glossary
+
+This glossary defines the key columns from the `raw_adverse_events` and `dosing_info` source tables.
+
+| Field Name | Source Table | Description |
+| :--- | :--- | :--- |
+| `Subject` | Both | The unique identifier for a patient in the clinical trial. |
+| `AETERM_SOC` | `raw_adverse_events` | **System Organ Class**. The high-level biological system category for an adverse event (e.g., "Blood and lymphatic system disorders"). |
+| `AETERM_PT` | `raw_adverse_events` | **Preferred Term**. The specific, standardized name for an adverse event (e.g., "Neutropenia"). |
+| `CTCAE` | `raw_adverse_events` | **Common Terminology Criteria for Adverse Events**. A string that indicates the severity of an event, typically in the format "Grade X". |
+| `grade` | (Derived) | An integer (1-5) extracted from the `CTCAE` string, representing the severity of the event. |
+| `RELCLR` | `raw_adverse_events` | **Causality / Relatedness**. The investigator's assessment of whether the event was related to the study drug. See section 3.0 for the value hierarchy. |
+| `AESTDAT` | `raw_adverse_events` | The **Adverse Event Start Date**. |
+| `CLRSTDAT` | `dosing_info` | The **Drug Infusion Start Date**. |
+| `TTLDOSE` | `dosing_info` | The numerical value of a single drug dose administered to a patient. |
+| `TTLDOSU` | `dosing_info` | The **Unit** for the `TTLDOSE` value. Can be `'mCi'` (millicuries) or `'MBq'` (megabecquerels). |
+
+### 2.0 Key Concept Definitions
+
+These are the core analytical concepts that drive the logic of the workflows.
+
+#### **Patient Populations**
+A patient is assigned to a population based on their total calculated dose from all infusions, after applying the "Part B" filter (`"Subject" LIKE '%-2%'`).
+
+-   **Safety Population:** Includes any patient who has received any amount of the study drug.
+    -   **Logic:** `total_dose_mci > 0`
+
+-   **mITT Population (Modified Intent-to-Treat):** A more restrictive subset of the Safety Population, including only patients who received a specified minimum therapeutic dose.
+    -   **Logic:** `total_dose_mci > 60`
+
+#### **Treatment-Emergent Adverse Event (TEAE)**
+An adverse event whose start date (`AESTDAT`) is on or after the patient's **first drug infusion date** (`MIN(CLRSTDAT)`). This filter ensures the analysis only includes side effects that occurred after treatment began.
+
+#### **Single Worst Grade (SWG)**
+The process for selecting the single most severe occurrence of an adverse event for a patient who may have experienced it multiple times. The selection follows a strict two-level sorting hierarchy:
+
+1.  **Primary Sort Key:** The event `grade` is sorted in descending order (Grade 5 is worst).
+2.  **Tie-Breaker Key:** The `RELCLR` (Causality) rank is sorted in ascending order (most related is worst).
+
+For example, if a patient has a Grade 4 "Unrelated" event and a Grade 4 "Possibly Related" event, the "Possibly Related" one is selected as the SWG because it has a higher causality rank.
+
+### 3.0 Causality (RELCLR) Hierarchy
+
+The `RELCLR` field indicates the investigator's opinion on the relationship between the adverse event and the study drug. For the purpose of SWG tie-breaking, the values are ranked in the following descending order of importance:
+
+| Value | Rank (for sorting) | Description |
+| :--- | :--- | :--- |
+| `Definitely Related` | 1 | The investigator is certain the drug caused the event. |
+| `Probably Related` | 2 | The investigator is highly confident the drug caused the event. |
+| `Possibly Related` | 3 | The investigator believes there is a reasonable chance the drug caused the event. |
+| `Unlikely` | 4 | The investigator believes the drug is unlikely to have caused the event. |
+| `Unrelated` | 5 | The investigator is certain the drug did not cause the event. |
+| *(Other/Null)* | 6 | Any other value is considered the lowest priority. |
+
+For the final report's statistical counts, only events with a `RELCLR` value of `Definitely Related`, `Probably Related`, or `Possibly Related` are included.

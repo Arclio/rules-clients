@@ -1,0 +1,63 @@
+---
+description: "Explains the foundational business goal and complex manual data processing logic for the Cellectar adverse events reporting project. This rule provides the essential 'why' and 'what' behind the automated workflows."
+globs: []
+alwaysApply: false
+---
+
+## Rule: Cellectar Adverse Events - Business Logic and Manual Process
+
+This rule defines the business context and the step-by-step manual data analysis process that our automated workflows are designed to replicate with 100% fidelity.
+
+### 1.0 The Business Goal
+
+The primary objective of this project is to automate the creation of **Treatment-Emergent Adverse Events (TEAE)** summary tables for our client, Cellectar. This report is a critical component of clinical trial analysis, used for internal review and regulatory documentation.
+
+The manual process, performed by Clinical Data Manager, is time-consuming, complex, and susceptible to human error. The automated solution must produce a verifiably identical result with speed and perfect reproducibility.
+
+### 2.0 The Manual Data Analysis Workflow
+
+The entire automated process is a direct implementation of the following multi-stage manual analysis performed by the client.
+
+#### Stage 1: Data Ingestion and Cohort Definition
+
+1.  **Two Source Files:** The process begins with two raw data files from the clinical trial database:
+    *   `raw_adverse_events`: A log of every adverse event (side effect) reported for all subjects.
+    *   `dosing_info`: A log of every drug infusion administered to all subjects.
+
+2.  **"Part B" Patient Filter (Critical First Step):** The analysis is **exclusively** focused on patients from "Part B" of the study. These patients are identified by a `Subject` ID that contains a "-2" component (e.g., `1601151-204`). All patients not matching this pattern are excluded from the entire analysis.
+
+#### Stage 2: Population Calculation
+
+Before analyzing events, each patient in the "Part B" cohort is assigned to one or both of the following analysis populations based on their total dose of the study drug.
+
+1.  **Calculate Total Dose:** For each subject, sum all their doses from the `dosing_info` file.
+2.  **Handle Mixed Units:** This calculation is complicated by the fact that dose values (`TTLDOSE`) are recorded in two different units, identified by the `TTLDOSU` column:
+    *   `mCi` (millicuries): No conversion needed.
+    *   `MBq` (megabecquerels): Must be converted to mCi using the formula: `mCi = MBq * 0.027027027`.
+3.  **Assign to Populations:** Based on the final calculated `total_dose_mci`, each patient is flagged:
+    *   **Safety Population:** Any patient with a `total_dose_mci > 0`.
+    *   **mITT Population:** A more restrictive subset of patients with a `total_dose_mci > 60`.
+
+The final count of patients in each population (`N`) serves as the denominator for all percentage calculations in the final report.
+
+#### Stage 3: Isolate and Rank Relevant Adverse Events
+
+This stage filters the master list of adverse events down to only the specific events that should be included in the report.
+
+1.  **Treatment-Emergent Filter:** An adverse event is only considered "treatment-emergent" if its start date (`AESTDAT`) is on or after the patient's **first drug infusion date**. All events that occurred before the first dose are excluded.
+
+2.  **Single Worst Grade (SWG) Selection:** A patient may experience the same adverse event multiple times with varying severity (Grades 1-5). For the final report, only the single most severe occurrence is counted. The selection process follows a strict hierarchy:
+    *   **Primary Sort:** Select the event with the highest **Grade** (e.g., Grade 4 is chosen over Grade 3).
+    *   **Tie-Breaker:** If a patient has the same event multiple times at the same highest grade, the one with the highest "causality" is chosen. Causality (`RELCLR`) is ranked as follows: `Definitely Related` > `Probably Related` > `Possibly Related` > `Unlikely` > `Unrelated`.
+
+#### Stage 4: Final Aggregation and Reporting
+
+Once the dataset is filtered down to one "single worst grade" event per patient per event type, the final table is constructed.
+
+1.  **Final Causality Filter:** The report only includes events that are considered potentially related to the drug. The dataset from Stage 3 is filtered to include only events where `RELCLR` is `Definitely Related`, `Probably Related`, or `Possibly Related`.
+
+2.  **Calculate 'n' (Per-Event Counts):** For each unique adverse event (`AETERM_PT`) and each grade, count the number of distinct subjects who experienced it.
+
+3.  **Calculate SOC Summary Rows:** A key requirement is the summary row for each **System Organ Class (SOC)**. For the "All Grades" column of a SOC row, a patient is counted **only once**, even if they experienced multiple different adverse events within that same SOC. This requires a separate unique count of subjects per SOC.
+
+4.  **Calculate Percentages:** All `n` counts are converted to percentages using the formula `(n / N) * 100`, where `N` is the total number of patients in the relevant population (mITT or Safety) calculated in Stage 2.
