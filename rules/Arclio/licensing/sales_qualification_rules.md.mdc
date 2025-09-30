@@ -1,0 +1,54 @@
+# Sales Qualification Guidelines
+
+## Qualification Framework
+
+### MEDDIC Methodology
+- **Metrics**: Quantify the economic impact
+- **Economic Buyer**: Identify budget authority
+- **Decision Criteria**: Understand evaluation process
+- **Decision Process**: Map the buying journey
+- **Identify Pain**: Confirm business challenges
+- **Champion**: Develop internal advocate
+
+## Lead Scoring System
+
+### Firmographic Scoring (40% weight)
+- Company size: 1000+ employees (10 pts), 500-999 (7 pts), <500 (3 pts)
+- Industry fit: Target industry (10 pts), Adjacent (5 pts), Other (0 pts)
+- Geographic location: Primary market (10 pts), Secondary (5 pts), Tertiary (0 pts)
+
+### Behavioral Scoring (35% weight)
+- Website engagement: High (10 pts), Medium (5 pts), Low (1 pt)
+- Content downloads: Multiple (8 pts), Single (4 pts), None (0 pts)
+- Email engagement: High (8 pts), Medium (4 pts), Low (0 pts)
+
+### Demographic Scoring (25% weight)
+- Job title/role: C-level (10 pts), Director (7 pts), Manager (4 pts), Other (1 pt)
+- Department: IT/Operations (8 pts), Business units (6 pts), Other (2 pts)
+
+## Qualification Process
+
+### Stage 1: Initial Contact
+- Verify contact information and role
+- Conduct discovery call within 48 hours
+- Complete initial qualification questionnaire
+- Score lead based on initial information
+
+### Stage 2: Needs Assessment
+- Identify specific business challenges
+- Understand current solutions and limitations
+- Quantify impact of problems
+- Assess timeline and urgency
+
+### Stage 3: Solution Fit
+- Map solution capabilities to needs
+- Identify technical requirements
+- Assess integration complexity
+- Determine implementation timeline
+
+## Disqualification Criteria
+- No budget or timeline beyond 18 months
+- Cannot access decision maker within 30 days
+- Technical requirements exceed platform capabilities
+- Competitor evaluation in final stages
+- Previous churned customer without resolution
