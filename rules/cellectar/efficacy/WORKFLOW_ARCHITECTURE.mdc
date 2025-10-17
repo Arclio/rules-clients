@@ -1,0 +1,476 @@
+---
+description: "Technical implementation architecture for the Cellectar Efficacy workflows. Describes HOW the system implements the documented process."
+---
+
+## Cellectar Efficacy Analysis - Workflow Architecture
+
+### 1.0 Purpose
+
+This document describes the **technical implementation** of the Cellectar efficacy analysis system. It explains HOW we achieve the business requirements documented in BUSINESS_LOGIC.mdc using the specifications in TECHNICAL_APPENDIX.mdc.
+
+**What This Document Contains:**
+- System architecture and design patterns
+- Database view strategy
+- Workflow structure
+- Implementation rationale
+
+**What This Document Does NOT Contain:**
+- Business process descriptions (see BUSINESS_LOGIC.mdc)
+- Clinical criteria or thresholds (see TECHNICAL_APPENDIX.mdc)
+- Detailed SQL code (belongs in code repositories)
+
+---
+
+### 2.0 Core Architectural Principle: Database-First
+
+The system uses a **"Database-First"** approach where all complex data transformations occur within PostgreSQL, not in workflow code.
+
+**Rationale:**
+- **Performance:** SQL window functions are optimized for sequential calculations
+- **Scalability:** Avoids pulling large intermediate datasets into workflow memory
+- **Maintainability:** Business logic centralized in SQL, creating single source of truth
+
+**Key Decision:** Complex stateful analysis (running nadir, PD confirmation) is performed in database views, not workflow loops.
+
+---
+
+### 3.0 The Three-View Architecture
+
+The system uses three specialized database views that transform raw data into structured outputs:
+
+```
+Raw Tables → Helper Functions → View 1 (Trajectory) → View 2 (Summary) ← View 3 (Investigator)
+                                        ↓                       ↓
+                                  Concordance         Final Reports (6 sheets)
+                                  (Future)
+```
+
+#### 3.1 View 1: `vw_patient_efficacy_trajectory`
+
+**Purpose:** Calculate per-visit response for each patient using stateful logic.
+
+**Key Responsibilities:**
+1. Apply baseline selection logic (Day 1 Pre-Infusion → Screening fallback)
+2. Calculate percentage reduction from baseline
+3. Calculate running nadir using window functions
+4. Detect PD qualification at each visit
+5. Confirm PD when consecutive visits meet criteria
+6. Assign provisional response categories
+
+**Key Outputs (per visit):**
+- Subject, visit_date, igm_value
+- baseline_igm, nadir_igm
+- reduction_pct, calculated_response
+
+**Implementation Note:** Uses SQL window functions for stateful calculations:
+```sql
+-- Running nadir
+MIN(igm_value) OVER (
+  PARTITION BY Subject
+  ORDER BY visit_date
+  ROWS UNBOUNDED PRECEDING
+) as nadir_igm
+
+-- Previous visit's IgM (for PD confirmation)
+LAG(igm_value) OVER (
+  PARTITION BY Subject
+  ORDER BY visit_date
+) as prev_igm_value
+```
+
+**Why This Matters:** This view contains the complex, multi-row per-patient data. It's used for validation and concordance checking, but NOT for final reports.
+
+---
+
+#### 3.2 View 2: `vw_patient_summary`
+
+**Purpose:** Aggregate trajectory data into one-row-per-patient summary for reporting.
+
+**Key Responsibilities:**
+1. Identify **best_response_igm** (highest IgM-based category achieved, ignoring subsequent PD)
+2. Identify **final_status_igm** (current IgM-based disease state, with PD precedence once confirmed)
+3. Capture **investigator_best_overall** (from TUWMOVRLRS field)
+4. Calculate PFS (days from first treatment to progression or death from any cause)
+5. Enrich with demographics, genetics, treatment history
+6. Apply eligibility flags (enrolled, evaluable)
+
+**Key Outputs (per patient):**
+- subject_id
+- **best_response_igm**: Highest IgM-based response (VGPR > PR > MR > SD)
+- **final_status_igm**: Current IgM-based state (PD if confirmed, else last calculated response)
+- **investigator_best_overall**: Best investigator assessment (includes CR)
+- pfs_days, pfs_months (to progression or death from any cause per Owen Table II)
+- total_dose_mci, is_enrolled, is_evaluable
+- Demographics: age, gender, race, ethnicity
+- Genetics: myd88_status, cxcr4_status, tp53_status, cys481_status
+- Treatment: prior_tx_lines, is_btki_exposed, is_btki_refractory
+
+**Critical Decision:** This view implements THREE separate response outputs (see Section 4.0 for logic). These outputs are NOT merged or hybridized.
+
+**Why This Matters:** This is the **ONLY** view queried by final report workflows. It provides clean, one-row-per-patient data optimized for aggregation.
+
+---
+
+#### 3.3 View 3: `vw_investigator_best_response`
+
+**Purpose:** Capture investigator's best assessed response per patient.
+
+**Key Responsibilities:**
+1. Extract investigator assessments from `efficacy_response_assessment`
+2. Rank responses (CR best → PD worst)
+3. Return single best assessment per patient
+
+**Key Outputs:**
+- Subject, investigator_best_overall
+
+**Implementation Note:** Includes all investigator assessments up to alternative therapy start date (when available). Does NOT filter based on visit type labels.
+
+**Why This Matters:** Provides investigator clinical judgment for comparison with calculated IgM-based response. Used in patient summary view and future concordance reporting.
+
+---
+
+### 4.0 Response Determination Logic
+
+The `vw_patient_summary` view generates THREE independent response outputs per patient, following the client's documented process (see BUSINESS_LOGIC.mdc Section 7.0).
+
+#### 4.1 Output 1: Best Response (IgM-based)
+
+**Definition:** Highest response category achieved based purely on IgM reduction from baseline.
+
+**Purpose:** Captures peak treatment efficacy independent of subsequent progression.
+
+**Implementation Logic:**
+
+```sql
+-- CASE 1: BEST_RESPONSE_IGM (IgM-only, no CR, ignores PD)
+best_response_igm = CASE
+  WHEN best_reduction_pct >= 0.90 THEN 'VGPR'
+  WHEN best_reduction_pct >= 0.50 THEN 'PR'
+  WHEN best_reduction_pct >= 0.25 THEN 'MR'  -- Standard ≥ inequality per protocol
+  WHEN best_reduction_pct < 0.25 THEN 'SD'
+  ELSE 'SD'
+END
+```
+
+**Key Points:**
+- Uses **≥25%** (standard inequality) for MR threshold per client protocol DCL-16-001 Appendix G
+- Based ONLY on IgM reduction percentages
+- Does NOT include CR (cannot be determined from IgM alone)
+- Does NOT consider subsequent PD (captures peak efficacy)
+- Ignores investigator assessments
+
+---
+
+#### 4.2 Output 2: Final Status (Current IgM-Based Disease State)
+
+**Definition:** Current IgM-based disease state with PD taking precedence once confirmed.
+
+**Purpose:** Represents the patient's last known IgM-based clinical status.
+
+**Important Note:** This output is labeled `final_status_igm` to clarify it uses IgM logic + PD precedence only. Investigator/clinical PD via extramedullary or clinical progression is captured in `investigator_best_overall` and not merged here.
+
+**Implementation Logic:**
+
+```sql
+-- CASE 2: FINAL_STATUS_IGM (PD-first precedence, IgM-based only)
+final_status_igm = CASE
+  -- PD evaluated FIRST (highest precedence)
+  WHEN confirmed_pd_occurred = TRUE THEN 'PD'
+
+  -- Otherwise, use most recent calculated IgM-based response
+  WHEN last_reduction_pct >= 0.90 THEN 'VGPR'
+  WHEN last_reduction_pct >= 0.50 THEN 'PR'
+  WHEN last_reduction_pct >= 0.25 THEN 'MR'  -- Standard ≥ inequality per protocol
+  ELSE 'SD'
+END
+
+-- PD confirmation from trajectory view:
+confirmed_pd_occurred = (
+  Two consecutive visits where BOTH meet:
+    1. (current_igm - nadir_igm) / nadir_igm >= 0.25  (standard ≥)
+    2. (current_igm - nadir_igm) >= 500 mg/dL
+)
+```
+
+**Key Points:**
+- PD is evaluated FIRST and overrides all other categories once confirmed
+- Requires consecutive visits meeting BOTH relative AND absolute criteria (see Assumption A1)
+- Uses last calculated response if no confirmed PD
+- Does NOT include CR or use investigator assessments
+
+---
+
+#### 4.3 Output 3: Investigator Best Overall
+
+**Definition:** Best overall response as assessed by clinical investigator.
+
+**Purpose:** Captures investigator's clinical judgment including CR (which requires bone marrow, immunofixation, imaging).
+
+**Implementation Logic:**
+
+```sql
+-- Output 3: INVESTIGATOR_BEST_OVERALL (from TUWMOVRLRS)
+investigator_best_overall = (
+  SELECT TUWMOVRLRS
+  FROM efficacy_response_assessment
+  WHERE Subject = patient_id
+  AND TUWMOVRLRS IS NOT NULL
+  ORDER BY response_rank  -- CR best, PD worst
+  LIMIT 1
+)
+```
+
+**Key Points:**
+- Captured directly from `TUWMOVRLRS` field
+- Includes CR assessments (based on all required criteria)
+- NOT calculated, NOT modified, NOT merged with IgM-based outputs
+- Completely independent from Outputs 1 and 2
+
+---
+
+#### 4.4 Concordance Checking (Future Workflow)
+
+**Purpose:** Compare calculated IgM responses with investigator assessments for validation.
+
+**Method:** Side-by-side comparison at each visit using `vw_patient_efficacy_trajectory`:
+- Calculated response (from IgM thresholds)
+- Investigator IgM response (TUWMIGMRS)
+- Investigator overall response (TUWMOVRLRS)
+
+**Output:** Discrepancy report for manual review.
+
+**Critical Note:** This is comparison ONLY - we do NOT merge or create a hybrid "best of both" response. The three response streams remain completely independent.
+
+---
+
+#### 4.5 Design Rationale
+
+**Why Three Separate Outputs?**
+
+1. **best_response_igm**: Objective, data-driven efficacy measure (IgM-only)
+2. **final_status_igm**: IgM-based clinical state with progression precedence (IgM + PD from IgM thresholds only)
+3. **investigator_best_overall**: Clinical judgment including non-IgM criteria (includes CR and clinical/extramedullary PD)
+
+**Why No Hybrid Logic?**
+
+Client documentation (Manual Process PDF pages 8-9) shows side-by-side comparison for concordance checking, not merging or hybridization. We replicate the documented process faithfully by keeping all three outputs independent.
+
+---
+
+### 5.0 Helper Function Layer
+
+Before creating views, the workflow establishes PostgreSQL helper functions that encapsulate business logic:
+
+**Functions Created:**
+1. `normalize_genetic_status(status TEXT)` → TEXT
+2. `has_btki_exposure(patient_id TEXT)` → BOOLEAN
+3. `is_btki_refractory(patient_id TEXT)` → BOOLEAN
+4. `count_btki_regimens(patient_id TEXT)` → INTEGER
+5. `has_rituximab_exposure(patient_id TEXT)` → BOOLEAN
+6. `get_ipt_category(patient_id TEXT, category TEXT)` → TEXT
+
+**Purpose:** Ensure consistent logic across all views and reports.
+
+**Specifications:** See TECHNICAL_APPENDIX.mdc Section 9.0 for detailed function specifications.
+
+---
+
+### 6.0 Workflow Implementation
+
+#### 6.1 Current Workflow: Efficacy Reports V18
+
+**Purpose:** Generate six final summary reports
+
+**Process:**
+1. Drop and recreate helper functions
+2. Drop and recreate three database views
+3. Query `vw_patient_summary` to generate six report sheets:
+   - MRR ORR (Overall Response Rate)
+   - PFS (Progression-Free Survival)
+   - Demographics
+   - Prior Tx Summary
+   - Prior Tx Categories
+   - Cytogenetics
+4. Write results to single Google Sheet with six tabs
+
+**Execution Time:** ~30-45 minutes with full dataset
+
+**Key Architectural Benefit:** Workflows are lightweight—they only query final aggregated data, never process large intermediate datasets in memory.
+
+---
+
+#### 6.2 Future Workflow: Investigator Concordance
+
+**Purpose:** Validate calculated responses against investigator assessments
+
+**Planned Process:**
+1. Query `vw_patient_efficacy_trajectory` for per-visit calculated responses
+2. Join with `efficacy_response_assessment` for investigator responses
+3. Identify discrepancies
+4. Generate concordance report highlighting only differences
+
+**Use Case:** Quality assurance and validation of calculated logic
+
+---
+
+### 7.0 Key Design Patterns
+
+#### 7.1 Window Functions for Stateful Logic
+
+**Pattern:** Use SQL window functions for sequential calculations
+
+**Example:**
+```sql
+-- Calculate running nadir
+MIN(igm_value) OVER (
+  PARTITION BY Subject
+  ORDER BY visit_date
+  ROWS UNBOUNDED PRECEDING
+) as nadir_igm
+```
+
+**Why:** Dramatically faster than iterative loops; handles missing data gracefully
+
+---
+
+#### 7.2 Progressive Disease Confirmation Pattern
+
+**Pattern:** Use LAG function to access previous row for confirmation logic
+
+**Example:**
+```sql
+-- Previous visit's IgM
+LAG(igm_value) OVER (
+  PARTITION BY Subject
+  ORDER BY visit_date
+) as prev_igm_value
+
+-- Check if both current AND previous meet PD criteria
+CASE
+  WHEN current_meets_pd AND prev_meets_pd THEN 'PD'
+  ELSE calculated_response
+END
+```
+
+**Why:** Implements "two consecutive visits" requirement from client documentation
+
+---
+
+#### 7.3 Virtual Views (Not Materialized)
+
+**Pattern:** All views are virtual, recreated on each workflow run
+
+**Why:**
+- Ensures data freshness
+- No stale cached data
+- Simple to update logic (just recreate view)
+- No index maintenance overhead
+
+---
+
+### 8.0 Scalability & Performance
+
+**Database Indexing:**
+- All joins use indexed `Subject` field
+- Window functions partitioned by patient to limit scope
+
+**Memory Management:**
+- Workflows extract only final aggregated results
+- No large intermediate datasets held in workflow memory
+- Prevents payload size errors encountered in prior architectures
+
+**Query Optimization:**
+- View definitions optimized for read performance
+- Complex calculations cached in views, not recalculated per report
+
+---
+
+### 9.0 Data Flow Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       Raw Data Tables (7)                        │
+│  efficacy_igm, efficacy_response_assessment,                    │
+│  patient_demographics, patient_genetics, efficacy_prior_tx,     │
+│  dosing_info, **patient_key_details**                           │
+└────────────┬────────────────────────────────────────────────────┘
+             │
+             ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                    Helper Functions                              │
+│  normalize_genetic_status, has_btki_exposure,                   │
+│  get_ipt_category, (+ 3 more)                                   │
+└────────────┬────────────────────────────────────────────────────┘
+             │
+             ↓
+┌──────────────────────────────────┬──────────────────────────────┐
+│  vw_patient_efficacy_trajectory  │  vw_investigator_best_resp   │
+│  (per-visit calculations)        │  (best investigator assess)  │
+└─────────────┬────────────────────┴──────────────┬───────────────┘
+              │                                    │
+              └──────────────┬─────────────────────┘
+                             ↓
+              ┌──────────────────────────────────────┐
+              │     vw_patient_summary               │
+              │  (one-row-per-patient final state)   │
+              └──────────────┬───────────────────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        ↓                    ↓                    ↓
+   ┌─────────┐         ┌─────────┐         ┌──────────┐
+   │ Report 1│         │ Report 2│   ...   │ Report 6 │
+   │ MRR ORR │         │   PFS   │         │Cytogenet │
+   └─────────┘         └─────────┘         └──────────┘
+                             │
+                             ↓
+              ┌──────────────────────────────────────┐
+              │   Google Sheet (6 tabs)              │
+              └──────────────────────────────────────┘
+```
+
+---
+
+### 10.0 Extensibility & Maintenance
+
+**Adding New Reports:**
+- Query `vw_patient_summary` with new aggregation logic
+- No changes needed to core views
+
+**Updating Clinical Criteria:**
+- Modify thresholds in `vw_patient_efficacy_trajectory`
+- Update TECHNICAL_APPENDIX.mdc for documentation
+- Recreate view (automatic on next workflow run)
+
+**Adding New Helper Functions:**
+- Add function to helper function creation step
+- Document specification in TECHNICAL_APPENDIX.mdc
+- Use in view logic
+
+**Validation:**
+- Future concordance workflow runs independently
+- Does not affect report generation
+- Provides quality assurance layer
+
+---
+
+### 11.0 Known Limitations & Future Improvements
+
+**Current Status:**
+1. ✅ **RESOLVED:** Alternative therapy filtering now uses actual `"Date of 1st Tx post CLR 131"` field from patient_key_details table. Filter logic: exclude all visits where `visit_date >= alternative_therapy_start_date` across ALL visit types (Treatment, Unscheduled, Follow-Up). See BUSINESS_LOGIC.mdc §3.0 and TECHNICAL_APPENDIX.mdc §5.1.
+2. PD confirmation assumes consecutive visits (needs client validation - see Assumption A1)
+3. Evaluable population threshold (60 mCi) needs confirmation (see Assumption A3)
+
+**Planned Improvements:**
+1. Add concordance workflow for validation reporting
+2. Make PD confirmation configurable (consecutive vs. any two visits)
+3. Add enhanced patient summary view for specialized reporting
+
+**Status:** See BUSINESS_LOGIC.mdc Section 6.0 for detailed assumption documentation
+
+---
+
+### 12.0 References
+
+- BUSINESS_LOGIC.mdc: Process flow and business requirements
+- TECHNICAL_APPENDIX.mdc: Clinical criteria, thresholds, formulas
+- PostgreSQL documentation: Window Functions, View Management

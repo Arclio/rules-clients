@@ -1,0 +1,497 @@
+---
+description: "Single source of truth for clinical thresholds, data fields, formulas, and technical specifications. Reference this document for exact criteria and calculations."
+---
+
+## Cellectar Efficacy Analysis - Technical Appendix
+
+### 1.0 Purpose
+
+This document is the **single source of truth** for:
+- Clinical response thresholds and criteria
+- Data field definitions
+- Calculation formulas
+- Data quality rules
+
+**What This Document Does NOT Contain:**
+- Business process flow (see BUSINESS_LOGIC.mdc)
+- Implementation architecture (see WORKFLOW_ARCHITECTURE.mdc)
+- SQL code or workflow details (belongs in code repositories)
+
+---
+
+### 2.0 Response Classification Criteria
+
+**Source:** Protocol DCL-16-001 Appendix G + Owen et al. (2013)
+
+#### 2.1 IgM-Based Response Thresholds
+
+| Response | Reduction from Baseline | Inequality | Notes |
+|----------|------------------------|------------|-------|
+| **VGPR** | ≥90% | Standard ≥ | Very Good Partial Response |
+| **PR** | ≥50% to <90% | Standard ≥ | Partial Response |
+| **MR** | **≥25%** to <50% | Standard ≥ | Minor Response |
+| **SD** | <25% reduction AND <25% increase | Standard < | Stable Disease |
+
+**Critical Inequality Notes:**
+- MR uses **≥25%** (greater than or equal to), per client protocol DCL-16-001 Appendix G
+- A patient with exactly 25.0% reduction is classified as **MR**
+- All response thresholds (VGPR, PR, MR) use standard ≥ (greater than or equal)
+
+#### 2.2 Progressive Disease (PD) Criteria
+
+PD requires **ALL THREE** conditions:
+
+| Criterion | Threshold | Inequality | Source |
+|-----------|-----------|------------|--------|
+| **Relative Increase** | ≥25% from nadir | Standard ≥ | Protocol Appendix G |
+| **Absolute Increase** | ≥500 mg/dL (5 g/L) from nadir | Standard ≥ | Owen 2013 Table II + Client Manual Process PDF |
+| **Confirmation** | Two qualifying values | Required | Protocol Appendix G |
+
+**Authority Citation:**
+- **Relative criterion (≥25%)** + **Confirmation requirement**: Protocol DCL-16-001 Appendix G
+- **Absolute threshold (≥500 mg/dL / 5 g/L)**: Owen et al. 2013 Table II + Client's Manual Process PDF
+- **Consecutive interpretation**: Implementation assumption A1 (configurable)
+
+**PD Confirmation Requirement:**
+
+Client documentation states "requires confirmation" but does not specify whether the two qualifying visits must be consecutive or non-consecutive.
+
+**Implementation:** Two **consecutive** visits must meet PD criteria (configurable)
+
+**Configuration Toggle:** `pd_requires_consecutive`
+- **TRUE** (default): Two consecutive visits must meet both criteria
+- **FALSE**: Any two visits meeting criteria (can be non-consecutive)
+
+**Rationale:** Consecutive requirement prevents classifying transient fluctuations as progression; follows standard clinical practice. See BUSINESS_LOGIC.mdc Assumption A1.
+
+**Critical Notes:**
+- Uses **≥25%** (greater than or equal to) for relative increase threshold
+- A patient with exactly 25.0% increase from nadir meets the relative criterion (if absolute criterion also met)
+- Both relative AND absolute criteria must be met
+- Requires confirmation by second qualifying measurement
+
+**Example (from client documentation):**
+- Visit A: 34% increase, 202 mg/dL absolute → **NOT PD** (fails absolute criterion)
+- Visit B: 85% increase, 511 mg/dL absolute → **PD confirmed** (if consecutive with another qualifying visit)
+
+#### 2.3 Complete Response (CR) Criteria
+
+CR **cannot** be determined from IgM values alone. Requires ALL of:
+
+- Absence of monoclonal IgM by immunofixation (IFX negative)
+- Normal serum IgM level
+- Complete resolution of extramedullary disease (lymph nodes, spleen)
+- Morphologically normal bone marrow
+
+**Implementation:** CR is captured from investigator assessment field (`TUWMOVRLRS`), not calculated algorithmically.
+
+**Source:** Protocol DCL-16-001 Appendix G, page 157
+
+---
+
+### 3.0 Calculation Formulas
+
+#### 3.1 Percentage Reduction from Baseline
+
+```
+reduction_pct = ((baseline_igm - current_igm) / baseline_igm) × 100
+```
+
+**Sign Convention:**
+- Positive value = reduction (improvement)
+- Negative value = increase (worsening)
+
+**Example:**
+- Baseline = 1530 mg/dL
+- Current = 1350 mg/dL
+- Reduction = ((1530 - 1350) / 1530) × 100 = 11.76%
+- Response = SD (< 25% reduction)
+
+#### 3.2 Percentage Increase from Nadir
+
+```
+increase_pct = ((current_igm - nadir_igm) / nadir_igm) × 100
+```
+
+**Used for:** Progressive Disease assessment
+
+**Critical Note:** Formula uses nadir in denominator, NOT baseline. Manual Process PDF page 11 contains a typographical error showing "/baseline nadir" - the correct denominator is nadir only.
+
+**Example:**
+- Nadir = 599 mg/dL
+- Current = 1110 mg/dL
+- Increase = ((1110 - 599) / 599) × 100 = 85.3%
+- Absolute increase = 1110 - 599 = 511 mg/dL
+- Result = **PD criteria met** (>25% AND ≥500 mg/dL)
+
+#### 3.3 Progression-Free Survival (PFS)
+
+**Standard Definition:**
+```
+PFS_days = MIN(date_of_progression, date_of_death) - date_of_first_treatment
+PFS_months = PFS_days / 30.4375
+```
+
+**Note:** Uses average month length (365.25 / 12 = 30.4375)
+
+**Event Definitions:**
+
+| Event Type | Definition | Source Field (Key Details) |
+|------------|------------|---------------------------|
+| **Progression** | Date when PD confirmed (two consecutive visits) | Calculated or `date_of_pd_or_death` |
+| **Death** | Date of death (any cause) | `date_of_death` |
+| **Censored** | Last follow-up without event | `date_of_last_visit_or_death` |
+
+**Censoring Rules:**
+
+```
+IF date_of_death IS NOT NULL THEN
+  event_date = MIN(date_of_progression, date_of_death)
+  event_type = 'death' or 'progression'
+
+ELSE IF date_of_progression IS NOT NULL THEN
+  event_date = date_of_progression
+  event_type = 'progression'
+
+ELSE
+  event_date = date_of_last_visit_or_death  (censored)
+  event_type = 'censored'
+
+PFS_days = event_date - date_of_first_treatment
+```
+
+**Required Fields (from Key Details sheet):**
+1. `date_of_death` - Death date if occurred
+2. `date_of_last_visit_or_death` - Last known contact or death
+3. `date_of_pd_or_death` - Can be used to validate calculated progression date
+4. `active_fu` - Active follow-up status flag
+
+**Status:** ✅ Complete calculation possible when Key Details sheet is ingested
+
+**See Also:** BUSINESS_LOGIC.mdc Assumption A6 for implementation details
+
+**Field Mapping from patient_key_details Table:**
+
+| Logical Purpose | Database Column Name | Usage |
+|----------------|---------------------|--------|
+| Progression or death event | "Date of PD or death" | Combined progression/death event field |
+| Last contact (censoring) | "Date of Last Visit or Death" | Censoring date if no event |
+| Active follow-up flag | "Active FU?" | Follow-up status indicator |
+
+**Note:** The field `"Date of PD or death"` is used for both progression and death event dates. If a separate "Date of PD or Analysis" field exists in the data, it can be used for validation purposes.
+
+**Complete PFS Calculation Logic:**
+
+```sql
+SELECT
+  subject_id,
+  CASE
+    -- Death occurred: use minimum of progression or death
+    WHEN date_of_death IS NOT NULL THEN
+      LEAST(calculated_progression_date, date_of_death)
+
+    -- Progression only (no death)
+    WHEN calculated_progression_date IS NOT NULL THEN
+      calculated_progression_date
+
+    -- No event: censored at last contact
+    ELSE
+      last_contact_date
+  END as event_date,
+
+  CASE
+    WHEN date_of_death IS NOT NULL AND date_of_death <= calculated_progression_date THEN 'death'
+    WHEN calculated_progression_date IS NOT NULL THEN 'progression'
+    ELSE 'censored'
+  END as event_type,
+
+  (event_date - first_treatment_date) as pfs_days,
+  (event_date - first_treatment_date) / 30.4375 as pfs_months
+FROM vw_patient_summary;
+```
+
+**Status:** ✅ Complete PFS calculation possible (Assumption A6 RESOLVED)
+
+#### 3.4 Dose Unit Conversion
+
+```
+dose_in_mCi = IF dose_unit = "MBq"
+              THEN dose_value × 0.027027027
+              ELSE dose_value
+```
+
+**Conversion Factor:** 1 mCi = 37 MBq, therefore 1 MBq = 0.027027027 mCi
+
+---
+
+### 4.0 Data Field Definitions
+
+#### 4.1 Source Tables
+
+| Table | Description | Primary Key |
+|-------|-------------|-------------|
+| `efficacy_igm` | IgM time-series measurements | Subject, IGMLDT |
+| `efficacy_response_assessment` | Investigator assessments | Subject, TUWMSTDT |
+| `efficacy_prior_tx` | Prior treatment history | Subject, PWBTHSTDT |
+| `dosing_info` | CLR 131 administration | Subject, CLRSTDAT |
+| `patient_demographics` | Baseline patient data | Subject |
+| `patient_genetics` | Genetic mutation status | Subject |
+| `patient_key_details` | Critical dates, death info, validation fields | Patient ID |
+
+#### 4.2 Critical Fields
+
+| Field | Type | Description | Format/Values |
+|-------|------|-------------|---------------|
+| **Subject** | String | Patient ID | `XXXXXXX-XXX` format |
+| **InstanceName** | String | Visit name | See Section 4.3 |
+| **IGMLDT** | Date | IgM collection date | `DD/MON/YYYY` |
+| **IGMLRES** | Numeric | IgM result (mg/dL) | Positive number |
+| **TUWMIGMRS** | String | Investigator IgM response | See Section 4.4 |
+| **TUWMOVRLRS** | String | Investigator overall response | See Section 4.4 |
+| **PWBTHDRUG1** | String | Prior therapy drug name | Free text |
+| **PWBTHREFR** | String | Refractory status | "Yes" / "No" |
+| **CLRSTDAT** | Date | CLR 131 dose date | `DD-Mon-YY` |
+| **TTLDOSE** | Numeric | Dose amount | Positive number |
+| **TTLDOSU** | String | Dose unit | "mCi" / "MBq" |
+
+#### 4.3 Visit Name Values
+
+**Baseline Visits (priority order):**
+1. "Day 1 Pre-Infusion (WM Cycle 1)" ← Primary baseline
+2. "Screening" ← Fallback baseline
+
+**Efficacy Assessment Visits:**
+- "Day 8 (WM Cycle N)"
+- "Day 15 Pre-Infusion (WM Cycle N)"
+- "Day 22 (WM Cycle N)"
+- "Day 29 (WM Cycle N)"
+- "Day 36 (WM Cycle N)"
+- "Day 43 (WM Cycle N)"
+- "Day 50 (WM Cycle N)"
+- "Day 57"
+- "Unscheduled DD/MMM/YYYY"
+- "Follow-Up (N)"
+
+#### 4.4 Investigator Assessment Values
+
+**TUWMIGMRS (IgM Response):**
+- "Stable disease"
+- "Minor Response"
+- "Partial Response"
+- "Progressive disease"
+
+**TUWMOVRLRS (Overall Response):**
+- "Complete Response"
+- "Partial Response"
+- "Minor Response"
+- "Stable disease"
+- "Progressive disease"
+- "Not evaluated"
+
+---
+
+#### 4.7 Alternative Therapy and Death Tracking
+
+**Table:** patient_key_details
+
+**Critical Fields (actual database column names):**
+
+| Field (Database Column) | Logical Name | Type | Description | Format/Values |
+|------------------------|--------------|------|-------------|---------------|
+| **"Patient ID"** | subject_id | String | Patient identifier | `XXXXXXX-XXX` format |
+| **"Date of 1st Tx post CLR 131"** | alternative_therapy_start_date | Date | Date patient initiated alternative WM therapy post-CLR 131 | Date string |
+| **"Date of Last Visit or Death"** | last_contact_date | Date | Last clinical contact or death | Date string |
+| **"Date of PD or death"** | pd_or_death_date | Date | Progression or death event date | Date string |
+| **"Best Response"** | best_response_reference | String | Client's reference best response (validation) | CR/VGPR/PR/MR/SD/PD |
+| **"Total Administered Dose (mCi)"** | total_dose_mci | Numeric | Total CLR 131 dose administered | Positive number |
+| **"First date of best response"** | first_best_response_date | Date | Date when best response first achieved | Date string |
+
+**Purpose:**
+- **Resolves Assumption A2:** Enables accurate post-therapy visit filtering
+- **Resolves Assumption A6:** Enables complete PFS calculation with death events
+- **Validation:** Provides reference best response values for concordance checking
+
+**Data Completeness:** 100% complete for all 65 WM patients (verified 2025-10-16)
+
+---
+
+### 5.0 Data Quality Rules
+
+#### 5.0.1 IgM Method Consistency
+
+**Requirement:** Sequential IgM assessments for each patient must use the same laboratory method.
+
+**Context:**
+- IgM quantification can use **nephelometry** or **densitometry**
+- Nephelometry typically yields higher values than densitometry
+- Coefficient of variation: ~8% (nephelometry) vs ~13% (densitometry)
+- Method variability can affect response classification if methods are mixed
+
+**Data Quality Rule:**
+- Per-subject IgM measurement method MUST be consistent across all time points
+- Flag patients with mixed-method sequences for manual review
+- Do NOT attempt automated harmonization or conversion between methods
+
+**Implementation Note:** If method metadata is available in source data, validate consistency; otherwise document as a data quality assumption.
+
+**Source:** Owen et al. 2013, Section on IgM Quantification Methods
+
+---
+
+#### 5.1 Visit Filtering
+
+**Include:**
+- All Unscheduled visits
+- All Follow-Up visits
+- All visits with valid IgM measurements
+
+**Exclude:**
+- Visits where IGMLRES is NULL or non-numeric
+- Visits before patient's baseline date
+- Visits after alternative therapy initiation (when date available)
+
+**Dataset Scope (Current Implementation):**
+- Current dataset includes only Phase 2 patients (Subject IDs contain `-2`)
+- **Note:** This is a dataset-bound filter, NOT a client clinical rule
+- See WORKFLOW_ARCHITECTURE.mdc for current dataset scope documentation
+
+**Alternative Therapy Filtering:**
+- **Source:** `"Date of 1st Tx post CLR 131"` field from patient_key_details table
+- **Logic:** Exclude all visits where `visit_date >= alternative_therapy_start_date`
+- **Scope:** Applies to ALL visit types (not just Follow-Up)
+- **Resolution:** See Assumption A2 (RESOLVED) in BUSINESS_LOGIC.mdc Section 6.0
+
+#### 5.2 Baseline Selection Logic
+
+**Priority Order:**
+1. Visit where `InstanceName = "Day 1 Pre-Infusion (WM Cycle 1)"`
+2. If not found: `InstanceName = "Screening"`
+3. If neither found: Patient has no valid baseline (excluded from analysis)
+
+**Tie-Breaking:** If multiple visits match same name, use earliest by date
+
+#### 5.3 Date Handling
+
+**Valid Formats:**
+- IgM dates (IGMLDT): `DD/MON/YYYY` or `DD-MON-YYYY` (e.g., `15-Nov-21` or `15/NOV/2021`)
+- Dose dates (CLRSTDAT): `DD-Mon-YY` (e.g., `23-Nov-21`)
+- Prior tx dates (PWBTHSTDT): `DD/MON/YYYY` or `UN/XX/XXXX` (unknown)
+
+**Critical Note:** Client data contains both `DD/MON/YYYY` and `DD-Mon-YY` formats. Implementation must support dual-parser logic to handle both formats correctly.
+
+**Unknown Dates:** Treated as `9999-12-31` for sorting (sorts to end)
+
+**Date Parsing Strategy:**
+1. Attempt to parse with primary format for that field type
+2. If parsing fails, attempt alternate format
+3. If both fail, treat as NULL/unknown
+
+---
+
+### 6.0 Population Definitions
+
+| Population | Criterion | Description |
+|-----------|-----------|-------------|
+| **All Enrolled** | Total dose > 0 mCi | Received any treatment |
+| **All Evaluable (mITT)** | Total dose > 60 mCi | Modified intent-to-treat; therapeutic dose |
+| **Screen Failures** | Total dose = 0 mCi | Never dosed; excluded |
+
+**Note:** 60 mCi threshold for "evaluable" is documented as Assumption A3 in BUSINESS_LOGIC.mdc
+
+---
+
+### 7.0 Summary Metrics Definitions
+
+| Metric | Definition | Formula |
+|--------|------------|---------|
+| **MRR** | Major Response Rate | (CR + VGPR + PR) / Total |
+| **ORR** | Overall Response Rate | (CR + VGPR + PR + MR) / Total |
+| **CBR** | Clinical Benefit Rate | (All except PD) / Total = (CR + VGPR + PR + MR + SD) / Total |
+
+**Important Note:** These composite endpoint definitions are NOT explicitly specified in client documentation. They represent standard oncology clinical trial endpoint definitions but should be validated with the client. See BUSINESS_LOGIC.mdc Assumption A5.
+
+**Alternative Definitions to Consider (pending client clarification):**
+- Some trials define CBR as CR + VGPR + PR + MR (excluding SD)
+- Some trials use DCR (Disease Control Rate) instead of CBR
+- Client may have their own preferred definitions
+
+---
+
+### 8.0 Term Glossary
+
+| Term | Definition |
+|------|------------|
+| **Baseline** | Initial IgM value (Day 1 Pre-Infusion or Screening) used as reference |
+| **Nadir** | Lowest IgM value achieved to date; running minimum |
+| **mITT** | Modified Intent-To-Treat; evaluable patients (dose > 60 mCi) |
+| **IPT** | Immediate Prior Therapy; most recent regimen before CLR 131 |
+| **PFS** | Progression-Free Survival; time to progression or death |
+| **BTKi** | Bruton's Tyrosine Kinase inhibitor (e.g., Ibrutinib) |
+| **Anti-CD20** | Monoclonal antibody therapy (e.g., Rituximab) |
+
+---
+
+### 9.0 Helper Function Specifications
+
+**Note:** These are logical specifications. Implementation details belong in code repositories.
+
+#### 9.1 normalize_genetic_status(status: String) → String
+
+**Purpose:** Standardize mutation status nomenclature
+
+**Logic:**
+- If input contains "mut" → return "mutant"
+- If input contains "wild" or "wt" → return "wildtype"
+- Otherwise → return "unknown"
+
+#### 9.2 has_btki_exposure(patient_id: String) → Boolean
+
+**Purpose:** Check if patient received BTK inhibitor
+
+**Logic:** Return TRUE if any prior therapy drug name contains "BRUTIN" or "BTK"
+
+#### 9.3 is_btki_refractory(patient_id: String) → Boolean
+
+**Purpose:** Check if patient was refractory to BTKi
+
+**Logic:** Return TRUE if any BTKi therapy has PWBTHREFR = "Yes"
+
+#### 9.4 count_btki_regimens(patient_id: String) → Integer
+
+**Purpose:** Count distinct BTKi regimens
+
+**Logic:** Count unique start dates for BTKi therapies
+
+#### 9.5 has_rituximab_exposure(patient_id: String) → Boolean
+
+**Purpose:** Check if patient received Rituximab
+
+**Logic:** Return TRUE if any drug name contains "RITUXIMAB"
+
+#### 9.6 get_ipt_category(patient_id: String, category: String) → String
+
+**Purpose:** Categorize Immediate Prior Therapy
+
+**Parameters:**
+- category: "btki" / "cd20" / "chemo" / "combo"
+
+**Returns:** "Y" (yes), "N" (no), or "NA" (not applicable)
+
+**Logic:**
+1. Find most recent prior therapy (before first CLR 131 dose)
+2. Check drug categories in that regimen
+3. Return Y/N based on category presence
+
+**Drug Categories:**
+- BTKi: Contains "BRUTIN" or "BTK"
+- Anti-CD20: Contains "RITUXIMAB"
+- Chemo: BENDAMUSTINE, CYCLOPHOSPHAMIDE, CHLORAMBUCIL, VINCRISTINE
+- Combo: Anti-CD20 WITH (BTKi OR Chemo)
+
+---
+
+### 10.0 External References
+
+- Owen et al. (2013): "Response assessment in Waldenstrom macroglobulinaemia: update from the VIth International Workshop." British Journal of Haematology, 160:171-176
+- Protocol DCL-16-001, Appendix G: Response Criteria for LPL/WM
+- Client's "WM Response Assessment Procedure" (Manual Process PDF, 10-Sep-2025)

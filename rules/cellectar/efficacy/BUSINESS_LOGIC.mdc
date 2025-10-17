@@ -1,0 +1,430 @@
+---
+description: "Documents the client's manual process for WM efficacy assessment. This specification describes WHAT is done, not HOW it's implemented."
+---
+
+## Cellectar Efficacy Analysis - Business Logic Specification
+
+### 1.0 Purpose & Scope
+
+This document describes the **manual statistical analysis process** documented by Cellectar for assessing patient response to CLR 131 treatment in Waldenstrom's Macroglobulinemia trials.
+
+**Key Principle:** This specification describes the process we are replicating, based on client documentation. Where client documentation is silent, assumptions are explicitly documented in Section 6.0.
+
+**Source Documents:**
+- "WM Response Assessment Procedure" (Manual Process PDF, 12 pages, dated 10-Sep-2025)
+- Protocol DCL-16-001, Appendix G: Response Criteria for LPL/WM
+- Owen et al. (2013): "Response assessment in Waldenstrom macroglobulinaemia: update from the VIth International Workshop"
+
+---
+
+### 2.0 The Manual Analysis Process
+
+The client's documented process consists of four sequential stages performed per patient.
+
+#### 2.1 Stage 1: Establish Patient Baseline
+
+**Goal:** Identify the single "starting point" IgM value for each patient.
+
+**Documented Procedure:**
+1. Extract all IgM measurements for one patient from clinical database
+2. Sort measurements by collection date (oldest to newest)
+3. Apply baseline selection rule:
+   - **Primary:** Use "Day 1 Pre-Infusion (WM Cycle 1)" IgM value
+   - **Fallback:** If Day 1 Pre-Infusion doesn't exist, use "Screening" IgM value
+4. Record this value as patient's baseline
+5. Only include measurements on or after baseline date in subsequent analysis
+
+**Source:** Manual Process PDF pages 5-6
+
+#### 2.2 Stage 2: Assign IgM-Based Category (for Computed Outputs)
+
+**Goal:** Assign an IgM-based category at each visit based on percentage reduction from baseline.
+
+**Important Context:** Formal Protocol Appendix G response categories (CR/VGPR/PR etc.) require imaging ± bone marrow confirmation. We **only capture these formal categories via investigator assessments** (TUWMOVRLRS field). This stage assigns provisional IgM-based categories for our calculated outputs (best_response_igm and final_status_igm).
+
+**Documented Procedure:**
+For each visit with IgM measurement:
+
+1. Calculate percentage change from baseline:
+   ```
+   reduction_pct = ((baseline_igm - current_igm) / baseline_igm) × 100
+   ```
+
+2. Assign provisional IgM-based category by comparing to clinical thresholds (see TECHNICAL_APPENDIX.mdc for exact thresholds)
+
+3. Record both the percentage and category
+
+**Notes:**
+- Positive reduction_pct = improvement (IgM decreased)
+- Negative reduction_pct = worsening (IgM increased)
+- Category calculated for every visit where IgM was measured
+- These categories are for computed analysis only; formal investigator assessments are captured separately
+
+**Source:** Manual Process PDF pages 6-7
+
+#### 2.3 Stage 3: Assess for Disease Progression
+
+**Goal:** Determine if disease has progressed after achieving improvement.
+
+**Documented Procedure:**
+
+1. **Identify Nadir:**
+   - Nadir = lowest IgM value achieved to date
+   - Calculated as running minimum across all visits
+   - Updated at each new visit
+
+2. **Check Progressive Disease Criteria:**
+   A visit qualifies as PD if **ALL** of the following are met:
+   - **Relative Criterion:** Current IgM is **≥25%** higher than nadir (standard inequality)
+   - **Absolute Criterion:** Current IgM has increased by **≥500 mg/dL** from nadir
+   - **Confirmation:** A second qualifying value is obtained
+
+3. **PD Confirmation Requirement:**
+   - PD requires confirmation by a second measurement
+   - Both qualifying measurements must meet the relative AND absolute criteria
+
+4. **PD Precedence:**
+   - Once confirmed, PD overrides any other response category
+
+**Example from Client Documentation (Manual Process page 12):**
+- Visit A: IgM increased 34% from nadir, but only 202 mg/dL absolute → **NOT PD** (fails absolute criterion)
+- Visit B: IgM increased 85% from nadir, and 511 mg/dL absolute → **meets PD criteria; requires confirmation at a subsequent qualifying visit**
+
+**Source:** Protocol Appendix G + Manual Process PDF pages 10-12
+
+#### 2.4 Stage 4: Compare to Investigator Assessment
+
+**Goal:** Validate calculated response against investigator's clinical assessment.
+
+**Documented Procedure:**
+
+1. For each visit, retrieve investigator's assessment from "LPL/WM Response Assessment" form:
+   - `TUWMIGMRS` = IgM response component
+   - `TUWMOVRLRS` = Overall response (includes bone marrow, imaging)
+
+2. Compare calculated response to investigator response side-by-side
+
+3. Document concordance or discordance
+
+**Critical Note:** This is a **comparison for validation ONLY**, not a merging or hybrid step. The client documentation shows side-by-side comparison for concordance checking. We maintain two independent outputs:
+- **Calculated IgM-based response** (from Stage 2-3 logic)
+- **Investigator overall assessment** (from TUWMOVRLRS field)
+
+These outputs remain separate and are not merged into a single "best of both" hybrid response.
+
+**Source:** Manual Process PDF pages 8-9
+
+---
+
+### 3.0 Visit Inclusion & Exclusion
+
+**Visits Included:**
+- Screening visits
+- Day X Pre-Infusion (WM Cycle X) visits
+- Day X (WM Cycle X) visits
+- **Unscheduled visits**
+- **Follow-Up visits**
+
+**Visits Excluded:**
+- Visits where IgM value is NULL or missing
+- IgM values collected **after alternative therapy initiation**
+
+**Source:** Manual Process PDF pages 3-5
+
+**Critical Note:** Documentation explicitly includes both Unscheduled and Follow-Up visits. Exclusion is based ONLY on alternative therapy timing, NOT on visit type labels.
+
+**Alternative Therapy Filtering:**
+- **Source:** `"Date of 1st Tx post CLR 131"` field from patient_key_details table
+- **Logic:** Exclude all visits where `visit_date >= alternative_therapy_start_date`
+- **Scope:** Applies to ALL visit types (not just Follow-Up)
+- **Resolution:** See Assumption A2 (RESOLVED) in Section 6.0
+
+---
+
+### 4.0 Final Report Deliverables
+
+The client produces six summary reports:
+
+1. **MRR ORR (Overall Response Rate):**
+   - Response category counts and percentages
+   - Summary metrics (see note below):
+     - **MRR (Major Response Rate):** CR + VGPR + PR
+     - **ORR (Overall Response Rate):** CR + VGPR + PR + MR
+     - **CBR (Clinical Benefit Rate):** All responses except PD (CR + VGPR + PR + MR + SD)
+   - Patient-level detail showing best response
+
+   **Note:** The specific roll-up definitions (MRR/ORR/CBR) are not explicitly documented in client materials. These represent standard oncology endpoint definitions but should be validated with client (see Assumption A5).
+
+   **Validation Reference:**
+   - patient_key_details table contains `"Best Response"` field
+   - **Reference distribution (n=65 WM patients):**
+     - CR: 2 patients
+     - VGPR: 2 patients
+     - PR: 29 patients
+     - MR: 15 patients
+     - SD: 16 patients
+     - PD: 1 patient
+   - **Use:** Compare calculated best_response_igm against this reference
+   - **Purpose:** Validate implementation correctness via concordance checking
+
+2. **PFS (Progression-Free Survival):**
+   - Time from treatment start to progression or death
+   - Summary statistics per patient and cohort
+
+   **Note:** Complete PFS calculation including death events is now possible with patient_key_details table (see Assumption A6).
+
+3. **Demographics:**
+   - Response rates by age, gender
+
+4. **Prior Treatment Summary:**
+   - Response rates by treatment history (BTKi exposure, prior lines)
+
+5. **Prior Treatment Categories:**
+   - Per-patient treatment exposure flags
+
+6. **Cytogenetics:**
+   - Response rates by genetic mutations (MYD88, CXCR4, etc.)
+
+---
+
+### 5.0 Patient Populations
+
+**All Enrolled:**
+- Criterion: Received any dose of CLR 131 (total dose > 0 mCi)
+- Description: All patients who received treatment
+
+**All Evaluable (mITT):**
+- Criterion: Received therapeutic dose (total dose > 60 mCi)
+- Description: Modified intent-to-treat population
+- **NOTE:** 60 mCi threshold is an assumption (see Section 6.0)
+
+**Screen Failures:**
+- Criterion: Total dose = 0 mCi
+- Description: Never dosed; excluded from all reports
+
+---
+
+### 6.0 Implementation Assumptions
+
+Client documentation is silent on certain details. The following assumptions were made to complete the automation. **These assumptions must be validated with the client.**
+
+#### Assumption A1: PD Confirmation Must Be Consecutive
+
+**What Client Says:** "Requires confirmation" and "second qualifying value"
+
+**What Client Doesn't Say:** Whether the two qualifying visits must be consecutive
+
+**Our Assumption:** Two consecutive visits must meet PD criteria
+
+**Rationale:** Prevents classifying transient fluctuations as progression; follows standard clinical practice
+
+**Status:** ⚠️ Needs client confirmation
+
+**Toggle:** Can be made configurable if client clarifies
+
+---
+
+#### Assumption A2: Alternative Therapy Exclusion Proxy
+
+**What Client Says:** "Statisticians exclude values after alternative therapy initiation" (PDF page 5)
+
+**Resolution:** ✅ **RESOLVED** - patient_key_details table provides this field
+
+**Implementation:**
+- **Field:** `"Date of 1st Tx post CLR 131"` in patient_key_details table
+- **Logic:** Exclude all IgM visits where `visit_date >= alternative_therapy_start_date`
+- **Filter Scope:** Applies to all visit types (Treatment, Unscheduled, Follow-Up)
+
+**Data Quality:**
+- 100% of patients (65/65) have this field populated
+- No Follow-Up proxy workaround needed
+
+**Status:** ✅ Complete field available; implementation uses actual date
+
+---
+
+#### Assumption A3: Evaluable Population Threshold
+
+**What Client Says:** mITT (evaluable) population exists
+
+**What Client Doesn't Say:** Exact threshold for evaluable vs. unevaluable
+
+**Our Assumption:** Patients with total dose > 60 mCi are evaluable
+
+**Rationale:** 60 mCi appears to be protocol-defined therapeutic dose
+
+**Status:** ⚠️ Needs client confirmation
+
+---
+
+#### Assumption A4: Complete Response Handling
+
+**What Client Says:** CR requires immunofixation negative, normal IgM, extramedullary resolution, normal bone marrow (Protocol Appendix G)
+
+**What This Means:** CR **cannot** be calculated from IgM values alone
+
+**Our Implementation:**
+- We capture investigator-assessed CR from `TUWMOVRLRS` field
+- We do NOT algorithmically assign CR based on IgM thresholds
+- If investigator records "Complete Response," we report CR
+
+**Status:** ✅ Follows documented criteria; investigator provides CR assessment
+
+---
+
+#### Assumption A5: MRR/ORR/CBR Definitions
+
+**What Client Says:** Summary reports include MRR, ORR, and CBR metrics
+
+**What Client Doesn't Say:** Exact definitions of these composite endpoints
+
+**Our Assumption:** Standard oncology definitions:
+- **MRR (Major Response Rate):** CR + VGPR + PR
+- **ORR (Overall Response Rate):** CR + VGPR + PR + MR
+- **CBR (Clinical Benefit Rate):** CR + VGPR + PR + MR + SD (all except PD)
+
+**Rationale:** These represent industry-standard oncology trial endpoints but should be validated with client
+
+**Status:** ⚠️ Needs client confirmation
+
+**Note:** See TECHNICAL_APPENDIX.mdc Section 7.0 and BUSINESS_LOGIC.mdc Section 4.0
+
+---
+
+#### Assumption A6: Death Date for PFS Calculation
+
+**What Client Says:** PFS should include death as event
+
+**What Client Provides:** patient_key_details table with death tracking fields
+
+**Resolution:** ✅ **RESOLVED** - Complete death event data available
+
+**Implementation:**
+- **Date of death field:** `"Date of PD or death"` in patient_key_details
+- **Last contact field:** `"Date of Last Visit or Death"` for censoring
+- **Logic:**
+  ```
+  IF date_of_death EXISTS THEN
+    event_date = MIN(progression_date, date_of_death)
+    event = 'progression' or 'death'
+  ELSE IF progression_date EXISTS THEN
+    event_date = progression_date
+    event = 'progression'
+  ELSE
+    event_date = last_contact_date (censored)
+  ```
+
+**Data Quality:**
+- 100% of patients (65/65) have death tracking fields populated
+- Enables complete PFS calculation including death events
+
+**Status:** ✅ Complete data available; standard oncology PFS calculation possible
+
+---
+
+### 7.0 Response Determination Logic Summary
+
+The system generates **three independent response outputs** per patient:
+
+**Critical Nomenclature Note:** We use `final_status_igm` (not just "final_status") to make explicit that this output is IgM-based only. Investigator clinical PD assessments (including extramedullary/clinical progression) are captured separately in `investigator_best_overall`.
+
+#### Output 1: Best Response (IgM-based)
+
+**Definition:** Highest response category achieved based purely on IgM reduction from baseline.
+
+**Logic:**
+```
+FOR EACH PATIENT:
+  FOR EACH VISIT:
+    1. Calculate reduction from baseline
+    2. Assign provisional category based on IgM thresholds:
+       - If ≥90% reduction: VGPR
+       - If ≥50% reduction: PR
+       - If ≥25% reduction: MR  (standard ≥ inequality)
+       - If <25% reduction: SD
+
+  BEST_RESPONSE_IGM = Highest category achieved across all visits
+  (VGPR > PR > MR > SD in ranking)
+```
+
+**Note:** This output ignores subsequent PD; it captures peak treatment efficacy.
+
+---
+
+#### Output 2: Final Status (Current IgM-Based Disease State)
+
+**Definition:** Current IgM-based disease state with PD precedence.
+
+**Logic:**
+```
+FOR EACH PATIENT:
+  1. Check if confirmed PD occurred (two consecutive visits meeting criteria)
+     → If YES: FINAL_STATUS_IGM = PD (regardless of earlier responses)
+
+  2. If NO confirmed PD:
+     → FINAL_STATUS_IGM = Most recent calculated response category
+```
+
+**PD Confirmation Criteria (both must be met):**
+- Relative: Current IgM **≥25%** higher than nadir (standard inequality)
+- Absolute: Current IgM ≥500 mg/dL higher than nadir
+- Confirmation: Two consecutive visits meeting both criteria
+
+**Important Note:** This output is labeled `final_status_igm` to clarify it uses IgM logic + PD precedence only. Investigator/clinical PD via extramedullary or clinical progression is captured in `investigator_best_overall` and not merged here.
+
+**Note:** Final Status (IgM) prioritizes current IgM-based clinical state; Best Response (IgM) prioritizes peak efficacy.
+
+---
+
+#### Output 3: Investigator Best Overall
+
+**Definition:** Best overall response as assessed by clinical investigator.
+
+**Source:** Captured from `TUWMOVRLRS` field in efficacy_response_assessment table
+
+**Includes:** CR assessments (based on immunofixation, bone marrow, imaging + IgM)
+
+**Note:** This is captured as-is from investigator; not calculated or modified.
+
+---
+
+#### Concordance Checking
+
+**Purpose:** Validate calculated IgM-based responses against investigator assessments.
+
+**Method:** Side-by-side comparison at each visit:
+- Calculated response (from IgM thresholds)
+- Investigator IgM response (TUWMIGMRS)
+- Investigator overall response (TUWMOVRLRS)
+
+**Output:** Concordance report flagging discrepancies for review.
+
+**Critical:** This is comparison ONLY - we do not merge or hybridize the three response streams.
+
+---
+
+### 8.0 Validation Approach
+
+To validate automation matches manual process:
+
+1. **Input Validation:** Use identical source data (CSV exports) that client uses
+2. **Intermediate Validation:** Compare per-visit calculations to client's spreadsheet
+3. **Final Validation:** Compare summary reports to client's delivered reports
+4. **Discrepancy Documentation:** Document differences with specification references
+
+**Critical Principle:** We implement the documented process faithfully. If results differ from client's, we document the discrepancy for collaborative review rather than modifying logic to force a match.
+
+---
+
+### 9.0 Key Terms
+
+See TECHNICAL_APPENDIX.mdc for complete glossary of clinical and technical terms.
+
+---
+
+### 10.0 References
+
+- Client's "WM Response Assessment Procedure" (PDF, 12 pages, dated 10-Sep-2025)
+- Protocol DCL-16-001, Appendix G: Response Criteria for LPL/WM
+- Owen et al. (2013), British Journal of Haematology, 160:171-176
+- Meeting notes: Cellectar Efficacy Workflow Discussion
