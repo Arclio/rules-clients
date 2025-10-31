@@ -393,10 +393,8 @@ dose_in_mCi = IF dose_unit = "MBq"
 | Population | Criterion | Description |
 |-----------|-----------|-------------|
 | **All Enrolled** | Total dose > 0 mCi | Received any treatment |
-| **All Evaluable (mITT)** | Total dose > 60 mCi | Modified intent-to-treat; therapeutic dose |
+| **All Evaluable (mITT)** | Total dose ≥ 60 mCi | Modified intent-to-treat; therapeutic dose |
 | **Screen Failures** | Total dose = 0 mCi | Never dosed; excluded |
-
-**Note:** 60 mCi threshold for "evaluable" is documented as Assumption A3 in BUSINESS_LOGIC.mdc
 
 ---
 
@@ -408,12 +406,9 @@ dose_in_mCi = IF dose_unit = "MBq"
 | **ORR** | Overall Response Rate | (CR + VGPR + PR + MR) / Total |
 | **CBR** | Clinical Benefit Rate | (All except PD) / Total = (CR + VGPR + PR + MR + SD) / Total |
 
-**Important Note:** These composite endpoint definitions are NOT explicitly specified in client documentation. They represent standard oncology clinical trial endpoint definitions but should be validated with the client. See BUSINESS_LOGIC.mdc Assumption A5.
+These composite endpoint definitions represent standard oncology clinical trial endpoints.
 
-**Alternative Definitions to Consider (pending client clarification):**
-- Some trials define CBR as CR + VGPR + PR + MR (excluding SD)
-- Some trials use DCR (Disease Control Rate) instead of CBR
-- Client may have their own preferred definitions
+**Primary Endpoint Time Window:** For the primary MRR endpoint calculation, only responses achieved within 12 months (365.25 days) of the first CLR 131 infusion are counted. This is implemented via the `best_response_for_primary_endpoint` field in the database views.
 
 ---
 

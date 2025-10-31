@@ -1,0 +1,387 @@
+---
+description: "Defines the core component library available for Application manifests. Specifies the props, behaviors, and usage patterns for each UI component."
+globs: []
+alwaysApply: false
+---
+## Rule: Application Component Library
+
+This rule defines the available UI components and their configuration schemas. All components are registered in the Component Registry and available for use in application manifests.
+
+### 1.0 Component Categories
+
+The core library provides three categories of components:
+
+1. **Layout Components:** Structure and organize content (Header, tabs, grids)
+2. **Display Components:** Present data (MetricCard, DataTable, ChartCard)
+3. **Content Components:** Static or semi-static information (ContentCard, InfoBanner, HeroCard)
+
+### 2.0 Layout & Structure Components
+
+#### 2.1 Header
+
+Displays application title, subtitle, and primary action buttons.
+
+**Component Name:** `"Header"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Primary title text |
+| `subtitle` | `string` | No | Secondary subtitle text |
+| `actions` | `ActionReference[]` | No | Array of action button configurations |
+
+**ActionReference Schema:**
+```typescript
+{
+  "label": string,
+  "action_id": string,
+  "params": object?,
+  "style": "primary" | "secondary" | "danger"?,
+  "icon": string?
+}
+```
+
+**Usage Example:**
+```json
+{
+  "component": "Header",
+  "props": {
+    "title": "Efficacy Dashboard",
+    "subtitle": "CLR 131 Phase II Trial",
+    "actions": [
+      { "label": "Add Data", "action_id": "open_upload", "icon": "upload" },
+      { "label": "Run Analysis", "action_id": "run_analysis", "style": "primary" }
+    ]
+  }
+}
+```
+
+### 3.0 Data Display Components
+
+#### 3.1 MetricCard
+
+Displays a single key metric with optional trend indicator.
+
+**Component Name:** `"MetricCard"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Metric label |
+| `value` | `string \| number` | Yes | Metric value (can be formatted string or raw number) |
+| `change` | `string` | No | Trend indicator (e.g., "+5%", "-2%") |
+| `data_source_id` | `string` | No | Reference to data source for live updates |
+| `format` | `"number" \| "percentage" \| "currency"` | No | Value formatting type |
+
+**Usage Example:**
+```json
+{
+  "component": "MetricCard",
+  "props": {
+    "title": "Overall Response Rate",
+    "value": "54%",
+    "change": "+5%",
+    "data_source_id": "response_metrics"
+  }
+}
+```
+
+**Data Source Integration:** If `data_source_id` is provided, the component will automatically update when the data source refreshes.
+
+#### 3.2 DataTable
+
+Full-featured table with sorting, filtering, and pagination.
+
+**Component Name:** `"DataTable"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | No | Table title |
+| `data_source_id` | `string` | Yes | Reference to data source returning an array |
+| `columns` | `ColumnDefinition[]` | Yes | Column configuration |
+| `sortable` | `boolean` | No | Enable column sorting (default: true) |
+| `filterable` | `boolean` | No | Enable filtering (default: false) |
+| `paginated` | `boolean` | No | Enable pagination (default: true) |
+| `page_size` | `number` | No | Items per page (default: 10) |
+| `row_action` | `ActionReference` | No | Action triggered when row is clicked |
+| `empty_message` | `string` | No | Message when no data (default: "No items found") |
+
+**ColumnDefinition Schema:**
+```typescript
+{
+  "key": string,                 // Field key in data object
+  "label": string,               // Column header text
+  "format": "date" | "currency" | "percentage" | "badge"?,
+  "sortable": boolean?,          // Override table-level sortable
+  "width": number | string?,     // Column width (e.g., 120 or "20%")
+  "badge_colors": object?        // For format: "badge", map values to colors
+}
+```
+
+**Usage Example:**
+```json
+{
+  "component": "DataTable",
+  "props": {
+    "title": "Recent Assessments",
+    "data_source_id": "recent_assessments",
+    "columns": [
+      { "key": "patient_id", "label": "PATIENT ID" },
+      { "key": "assessment_date", "label": "DATE", "format": "date" },
+      { "key": "response", "label": "RESPONSE", "format": "badge",
+        "badge_colors": { "CR": "green", "PR": "blue", "SD": "yellow", "PD": "red" } }
+    ],
+    "row_action": {
+      "label": "View",
+      "action_id": "view_assessment"
+    }
+  }
+}
+```
+
+**Badge Colors:** When `format: "badge"`, the `badge_colors` object maps cell values to color names.
+
+#### 3.3 ChartCard
+
+Card containing a data visualization (line, bar, pie, area, scatter).
+
+**Component Name:** `"ChartCard"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Chart title |
+| `chart_type` | `"line" \| "bar" \| "pie" \| "area" \| "scatter"` | Yes | Visualization type |
+| `data_source_id` | `string` | Yes | Reference to data source |
+| `config` | `ChartConfig` | Yes | Chart-specific configuration |
+
+**ChartConfig Schema:**
+```typescript
+{
+  "x_axis": { "field": string, "label": string? }?,
+  "y_axis": { "field": string, "label": string? }?,
+  "series": Array<{ "field": string, "label": string?, "color": string? }>?,
+  "legend": boolean?
+}
+```
+
+**Usage Example:**
+```json
+{
+  "component": "ChartCard",
+  "props": {
+    "title": "Duration of Response",
+    "chart_type": "line",
+    "data_source_id": "duration_data",
+    "config": {
+      "x_axis": { "field": "weeks", "label": "Weeks" },
+      "y_axis": { "field": "percentage", "label": "Response (%)" }
+    }
+  }
+}
+```
+
+#### 3.4 ListComponent
+
+Renders a dynamic list of items using a template.
+
+**Component Name:** `"ListComponent"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | No | List title |
+| `data_source_id` | `string` | Yes | Reference to data source returning an array |
+| `item_template` | `ItemTemplate` | Yes | Template for rendering each item |
+| `empty_message` | `string` | No | Message when list is empty |
+
+**ItemTemplate Schema:**
+```typescript
+{
+  "title": string,              // Primary text (supports {{field}} interpolation)
+  "subtitle": string?,          // Secondary text
+  "action": {
+    "label": string,
+    "action_id": string,
+    "params": object?           // Can use {{field}} for dynamic params
+  }?
+}
+```
+
+**Usage Example:**
+```json
+{
+  "component": "ListComponent",
+  "props": {
+    "title": "Upload History",
+    "data_source_id": "recent_uploads",
+    "item_template": {
+      "title": "{{count}} assessments",
+      "subtitle": "{{date}} • {{uploaded_by}}",
+      "action": {
+        "label": "View",
+        "action_id": "view_upload",
+        "params": { "upload_id": "{{id}}" }
+      }
+    }
+  }
+}
+```
+
+**Template Interpolation:** The `{{field}}` syntax is replaced with values from each data item.
+
+### 4.0 Content & Information Components
+
+#### 4.1 HeroCard / ActionCard
+
+Large, centered card for a primary call-to-action.
+
+**Component Name:** `"HeroCard"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Primary title |
+| `description` | `string` | No | Descriptive text |
+| `icon` | `string` | No | Icon identifier |
+| `action` | `ActionReference` | Yes | Primary action configuration |
+
+**Usage Example:**
+```json
+{
+  "component": "HeroCard",
+  "props": {
+    "title": "Add Efficacy Data",
+    "description": "Upload assessments to the database.",
+    "icon": "database",
+    "action": {
+      "label": "Start Upload",
+      "action_id": "open_upload_wizard"
+    }
+  }
+}
+```
+
+#### 4.2 ContentCard
+
+Simple card for static or semi-static content (text, lists, instructions).
+
+**Component Name:** `"ContentCard"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Card title |
+| `content` | `ContentBlock[]` | Yes | Array of content blocks |
+
+**ContentBlock Schema:**
+```typescript
+type ContentBlock =
+  | { "type": "text", "text": string }
+  | { "type": "list", "title": string?, "items": string[] }
+  | { "type": "markdown", "markdown": string }
+```
+
+**Usage Example:**
+```json
+{
+  "component": "ContentCard",
+  "props": {
+    "title": "Data Requirements",
+    "content": [
+      {
+        "type": "list",
+        "title": "Required Fields:",
+        "items": ["patient_id", "assessment_date", "response_category"]
+      },
+      {
+        "type": "text",
+        "text": "All dates must be in YYYY-MM-DD format."
+      }
+    ]
+  }
+}
+```
+
+#### 4.3 InfoBanner
+
+Alert or informational banner for notices and warnings.
+
+**Component Name:** `"InfoBanner"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `type` | `"info" \| "warning" \| "success" \| "error"` | Yes | Banner style |
+| `title` | `string` | No | Optional title |
+| `content` | `ContentBlock[]` | Yes | Content to display |
+
+**Usage Example:**
+```json
+{
+  "component": "InfoBanner",
+  "props": {
+    "type": "info",
+    "title": "CSV Upload Tips:",
+    "content": [
+      {
+        "type": "list",
+        "items": [
+          "Column names must match exactly (case-sensitive)",
+          "Dates must be in YYYY-MM-DD format",
+          "Maximum 1000 rows per upload"
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 5.0 Component Selection Guide
+
+**When to Use Each Component:**
+
+| Use Case | Component | Reason |
+| :--- | :--- | :--- |
+| Show single numeric value | `MetricCard` | Optimized for KPIs and metrics |
+| Display tabular data | `DataTable` | Supports sorting, filtering, pagination |
+| Show trend over time | `ChartCard` (line) | Best for time-series data |
+| Compare categories | `ChartCard` (bar) | Best for categorical comparisons |
+| Show proportions | `ChartCard` (pie) | Best for part-to-whole relationships |
+| List of recent items | `ListComponent` | Flexible template-based rendering |
+| Primary call-to-action | `HeroCard` | Large, prominent, centered |
+| Static instructions | `ContentCard` | Supports rich text, lists, markdown |
+| System messages | `InfoBanner` | Color-coded by severity |
+| Page header | `Header` | Standard header with actions |
+
+### 6.0 Common Component Patterns
+
+#### 6.1 Metric Dashboard Row
+Use 4 `MetricCard` components in a 12-column grid (span: 3 each).
+
+#### 6.2 Data Overview
+Combine `DataTable` with `ChartCard` in a 12-column grid (span: 6 each) for side-by-side data and visualization.
+
+#### 6.3 Form/Action Section
+Use `HeroCard` at the top, followed by two `ContentCard` components in a grid for instructions and history.
+
+#### 6.4 Multi-Tab Interface
+Use `Header` at the root, then `Tabs` layout with different content in each tab (Dashboard, Upload, Quality Check, etc.).
+
+### 7.0 Component Error Handling
+
+**Missing Data Source:** If a `data_source_id` doesn't exist or fails to load:
+- Component displays `empty_message` (if provided)
+- Or shows generic "No data available" message
+- Component does not crash or break layout
+
+**Invalid Props:** If required props are missing or invalid type:
+- Component displays error placeholder
+- Error is logged to console
+- Other components continue to render normally
+
+**Action Errors:** If an `action_id` reference doesn't exist:
+- Button is disabled
+- Tooltip shows "Action not found"
+- Click handler logs error to console

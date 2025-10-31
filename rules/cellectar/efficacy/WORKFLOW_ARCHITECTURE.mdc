@@ -105,7 +105,7 @@ LAG(igm_value) OVER (
 - Genetics: myd88_status, cxcr4_status, tp53_status, cys481_status
 - Treatment: prior_tx_lines, is_btki_exposed, is_btki_refractory
 
-**Critical Decision:** This view implements THREE separate response outputs (see Section 4.0 for logic). These outputs are NOT merged or hybridized.
+**Critical Decision:** This view implements FOUR separate response outputs (see Section 4.0 for logic). These outputs are NOT merged or hybridized.
 
 **Why This Matters:** This is the **ONLY** view queried by final report workflows. It provides clean, one-row-per-patient data optimized for aggregation.
 
@@ -131,7 +131,7 @@ LAG(igm_value) OVER (
 
 ### 4.0 Response Determination Logic
 
-The `vw_patient_summary` view generates THREE independent response outputs per patient, following the client's documented process (see BUSINESS_LOGIC.mdc Section 7.0).
+The `vw_patient_summary` view generates FOUR independent response outputs per patient, following the client's documented process (see BUSINESS_LOGIC.mdc Section 7.0).
 
 #### 4.1 Output 1: Best Response (IgM-based)
 
@@ -228,7 +228,47 @@ investigator_best_overall = (
 
 ---
 
-#### 4.4 Concordance Checking (Future Workflow)
+#### 4.4 Output 4: Best Response for Primary Endpoint
+
+**Definition:** Best response category achieved based purely on IgM reduction from baseline, considering **only visits within 12 months (365.25 days) of first treatment infusion**.
+
+**Purpose:** Used specifically for calculating the primary MRR (Major Response Rate) endpoint.
+
+**Implementation Logic:**
+
+```sql
+-- Output 4: BEST_RESPONSE_FOR_PRIMARY_ENDPOINT (time-windowed IgM-based)
+best_response_for_primary_endpoint = (
+  SELECT CASE
+    WHEN MAX(pct_reduction_baseline) >= 0.90 THEN 'VGPR'
+    WHEN MAX(pct_reduction_baseline) >= 0.50 THEN 'PR'
+    WHEN MAX(pct_reduction_baseline) >= 0.25 THEN 'MR'
+    ELSE 'SD'
+  END
+  FROM vw_patient_efficacy_trajectory
+  WHERE Subject = patient_id
+    AND visit_date <= (first_treatment_date + INTERVAL '365.25 days')
+    AND calculated_response != 'PD'
+)
+```
+
+**Key Points:**
+- Uses same IgM thresholds as Output 1 (≥90% VGPR, ≥50% PR, ≥25% MR)
+- **ONLY includes visits within 12-month window** from first infusion
+- Excludes PD visits (same as Output 1)
+- Does NOT include CR (cannot be determined from IgM alone)
+
+**Key Difference from Output 1:**
+- **Output 1 (`best_response_igm`):** All-time best response across entire study period
+- **Output 4 (`best_response_for_primary_endpoint`):** Best response within 12-month window only
+
+**Clinical Rationale:** The 12-month time window aligns with the study's primary endpoint definition. Responses achieved after 12 months, while clinically valid and captured in Output 1, do not count towards the primary MRR calculation but remain important for understanding long-term treatment effects.
+
+**Usage:** Step 7 of the workflow uses this field (not Output 1) for MRR calculations in the ORR summary report.
+
+---
+
+#### 4.5 Concordance Checking (Future Workflow)
 
 **Purpose:** Compare calculated IgM responses with investigator assessments for validation.
 
@@ -239,21 +279,22 @@ investigator_best_overall = (
 
 **Output:** Discrepancy report for manual review.
 
-**Critical Note:** This is comparison ONLY - we do NOT merge or create a hybrid "best of both" response. The three response streams remain completely independent.
+**Critical Note:** This is comparison ONLY - we do NOT merge or create a hybrid "best of both" response. The four response streams remain completely independent.
 
 ---
 
-#### 4.5 Design Rationale
+#### 4.6 Design Rationale
 
-**Why Three Separate Outputs?**
+**Why Four Separate Outputs?**
 
-1. **best_response_igm**: Objective, data-driven efficacy measure (IgM-only)
+1. **best_response_igm**: Objective, all-time efficacy measure (IgM-only, entire study period)
 2. **final_status_igm**: IgM-based clinical state with progression precedence (IgM + PD from IgM thresholds only)
 3. **investigator_best_overall**: Clinical judgment including non-IgM criteria (includes CR and clinical/extramedullary PD)
+4. **best_response_for_primary_endpoint**: Time-windowed efficacy measure (IgM-only, 12-month window for primary MRR endpoint)
 
 **Why No Hybrid Logic?**
 
-Client documentation (Manual Process PDF pages 8-9) shows side-by-side comparison for concordance checking, not merging or hybridization. We replicate the documented process faithfully by keeping all three outputs independent.
+Client documentation (Manual Process PDF pages 8-9) shows side-by-side comparison for concordance checking, not merging or hybridization. We replicate the documented process faithfully by keeping all four outputs independent.
 
 ---
 

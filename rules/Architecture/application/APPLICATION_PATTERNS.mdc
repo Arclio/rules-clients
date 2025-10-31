@@ -1,0 +1,396 @@
+---
+description: "Provides proven patterns and best practices for designing robust, user-friendly applications. Covers data flow, action composition, layout strategies, and common pitfalls."
+globs: []
+alwaysApply: false
+---
+## Rule: Application Design Patterns
+
+This rule outlines strategic patterns for designing high-quality applications that leverage the manifest-driven architecture effectively.
+
+### 1.0 The Dashboard Pattern
+
+**Purpose:** Display key metrics and recent activity at a glance, with drill-down actions.
+
+**Structure:**
+```
+VStack (root)
+  ├─ Header (title, primary actions)
+  └─ Tabs
+      ├─ Dashboard Tab
+      │   ├─ Grid (metrics row)
+      │   │   ├─ MetricCard (metric 1)
+      │   │   ├─ MetricCard (metric 2)
+      │   │   └─ MetricCard (metric 3)
+      │   └─ Grid (data tables/charts)
+      │       ├─ DataTable (recent items)
+      │       └─ ChartCard (trend visualization)
+      └─ Details Tab
+          └─ DataTable (full dataset with row actions)
+```
+
+**Key Characteristics:**
+- Metrics share a common data source for consistency
+- Row actions in tables navigate to detail views
+- Primary actions in header trigger workflows (e.g., "Run Analysis")
+- Each tab is self-contained with its own layout
+
+### 2.0 Data Source Patterns
+
+#### 2.1 Static Data for Prototyping
+Use `type: "static"` with inline data for rapid prototyping or configuration data.
+
+**When to Use:**
+- Building UI mockups before backend is ready
+- Displaying static lists (e.g., field requirements, instructions)
+- Configuration options that rarely change
+
+**Example:**
+```json
+"field_requirements": {
+  "type": "static",
+  "data": [
+    { "field": "patient_id", "required": true },
+    { "field": "assessment_date", "required": true }
+  ]
+}
+```
+
+#### 2.2 MCP Tool Data Sources
+Use `type: "mcp_tool"` for dynamic data fetched from external systems.
+
+**When to Use:**
+- Displaying live data from databases, APIs, or services
+- Data that changes frequently and needs refresh
+- User-specific or filtered data
+
+**Best Practices:**
+- Use `cache_ttl` to reduce redundant API calls (recommended: 60-300 seconds)
+- Use `refresh_interval` only for truly real-time data (increases load)
+- Pass parameters to filter data at the source (e.g., `{ "limit": 10 }`)
+
+**Example:**
+```json
+"recent_assessments": {
+  "type": "mcp_tool",
+  "tool_name": "supabase__execute_sql",
+  "params": {
+    "query": "SELECT * FROM assessments ORDER BY created_at DESC LIMIT 10"
+  },
+  "cache_ttl": 120
+}
+```
+
+#### 2.3 Shared Data Sources
+Define data sources once at the top level, reference them from multiple UI elements.
+
+**Rule:** If multiple components need the same data, use a single data source. This ensures consistency and reduces API calls.
+
+**Example:**
+```json
+"data_sources": {
+  "response_metrics": {
+    "type": "mcp_tool",
+    "tool_name": "efficacy.get_metrics"
+  }
+},
+"ui_elements": {
+  "metric_orr": {
+    "component": "MetricCard",
+    "props": {
+      "title": "ORR",
+      "data_source_id": "response_metrics"  // ← Shared reference
+    }
+  },
+  "metric_cr": {
+    "component": "MetricCard",
+    "props": {
+      "title": "CR",
+      "data_source_id": "response_metrics"  // ← Same data source
+    }
+  }
+}
+```
+
+#### 2.4 Data Transformation Patterns
+Use the `transformations` array to reshape and filter data returned by a data source before it reaches UI components. Transformations are applied sequentially on the backend, ensuring clean separation of data fetching and data presentation.
+
+**Pattern: Extracting Nested Data for a `DataTable`**
+
+**Problem:** An MCP tool returns a complex nested object like:
+```json
+{
+  "status": "success",
+  "results": {
+    "data": [
+      { "patient_uuid": "abc-123", "full_name": "John Doe", "response_category": "CR" },
+      { "patient_uuid": "def-456", "full_name": "Jane Smith", "response_category": "PR" }
+    ],
+    "total": 2,
+    "page": 1
+  }
+}
+```
+
+But your `DataTable` needs a clean array:
+```json
+[
+  { "patient_uuid": "abc-123", "full_name": "John Doe", "response_category": "CR" },
+  { "patient_uuid": "def-456", "full_name": "Jane Smith", "response_category": "PR" }
+]
+```
+
+**Solution:** Use `json_path_extract` to select the nested array:
+```json
+"assessments_data": {
+  "type": "mcp_tool",
+  "tool_name": "api.get_assessments",
+  "transformations": [
+    {
+      "operation": "json_path_extract",
+      "path": "results.data"
+    }
+  ]
+}
+```
+
+---
+
+**Pattern: Extracting a Single Value for a `MetricCard`**
+
+**Problem:** A data source returns a large object, but your `MetricCard` only needs one specific value:
+```json
+{
+  "summary": {
+    "overall_response_rate": 54,
+    "complete_response": 28,
+    "partial_response": 26
+  },
+  "breakdown": { ... }
+}
+```
+
+**Solution:** Use `get_item` with a JSON path to extract the specific value:
+```json
+"orr_metric": {
+  "type": "mcp_tool",
+  "tool_name": "efficacy.get_summary_metrics",
+  "transformations": [
+    {
+      "operation": "get_item",
+      "path": "summary.overall_response_rate"
+    }
+  ]
+}
+```
+
+Result: `54` (just the number, ready for MetricCard)
+
+---
+
+**Pattern: Selecting, Limiting, and Renaming Fields**
+
+**Problem:** A data source returns a large array with many columns and rows:
+```json
+{
+  "data": {
+    "patients": [
+      { "patient_uuid": "abc-123", "full_name": "John Doe", "enrollment_date": "2024-01-15", "site_id": 1, "status": "active", ... },
+      { "patient_uuid": "def-456", "full_name": "Jane Smith", "enrollment_date": "2024-01-20", "site_id": 2, "status": "active", ... },
+      // ... 100 more rows
+    ]
+  }
+}
+```
+
+But you only need the first 5 rows and 3 specific columns with renamed fields for your UI:
+```json
+[
+  { "id": "abc-123", "name": "John Doe", "enrollmentDate": "2024-01-15" },
+  { "id": "def-456", "name": "Jane Smith", "enrollmentDate": "2024-01-20" },
+  // ... 3 more rows
+]
+```
+
+**Solution:** Chain multiple transformations:
+```json
+"recent_patients": {
+  "type": "mcp_tool",
+  "tool_name": "database.query_patients",
+  "transformations": [
+    { "operation": "json_path_extract", "path": "data.patients" },
+    { "operation": "slice", "limit": 5 },
+    {
+      "operation": "select_fields",
+      "fields": {
+        "patient_uuid": "id",
+        "full_name": "name",
+        "enrollment_date": "enrollmentDate"
+      }
+    }
+  ]
+}
+```
+
+**Key Benefits:**
+1. **Backend Processing:** Heavy transformations don't slow down the UI
+2. **Reduced Payload:** Only necessary data is sent to the frontend
+3. **Consistent Interface:** Components always receive data in the expected format
+4. **Reusability:** Same MCP tool can serve different components with different transformations
+
+---
+
+**When to Use Each Transformation:**
+
+| Use Case | Transformation | Example |
+|----------|----------------|---------|
+| Extract nested array or object | `json_path_extract` | `{ "path": "data.patients" }` |
+| Get a single value for MetricCard | `get_item` | `{ "path": "summary.total" }` |
+| Rename fields for UI consistency | `select_fields` | `{ "fields": { "patient_uuid": "id" } }` |
+| Limit rows for performance | `slice` | `{ "limit": 10 }` |
+| Get specific array slice | `slice` | `{ "start": 5, "end": 10 }` |
+
+**Best Practice:** Always test your transformations with sample MCP tool responses to ensure the output matches your component's expectations.
+
+### 3.0 Action Composition Patterns
+
+#### 3.1 Workflow Actions with Confirmation
+For destructive or long-running workflows, always include a confirmation dialog.
+
+```json
+"run_analysis": {
+  "type": "trigger_workflow",
+  "workflow_id": 123,
+  "confirmation": {
+    "title": "Run Analysis",
+    "message": "This will analyze all uploaded data. Continue?"
+  }
+}
+```
+
+#### 3.2 Tool Actions with Success Feedback
+For MCP tool actions, provide user feedback and optionally refresh data.
+
+```json
+"delete_upload": {
+  "type": "invoke_mcp_tool",
+  "tool_name": "efficacy.delete_upload",
+  "param_mapping": { "upload_id": "{{upload_id}}" },
+  "on_success": {
+    "message": "Upload deleted successfully",
+    "refresh_data_sources": ["recent_uploads", "upload_stats"]
+  },
+  "on_error": {
+    "message": "Failed to delete upload"
+  }
+}
+```
+
+#### 3.3 Modal Actions for Multi-Step Forms
+Use modal actions to open wizards or forms without navigating away.
+
+```json
+"open_upload_wizard": {
+  "type": "open_modal",
+  "modal_id": "upload_wizard"
+}
+```
+
+### 4.0 Layout Composition Patterns
+
+#### 4.1 Responsive Grid for Metrics
+Use a 12-column grid with appropriate spans for metric cards.
+
+**Rule:** On standard screens, show 3-4 metric cards per row (span: 3-4). On mobile, they stack automatically (span: 12).
+
+```json
+{
+  "type": "grid",
+  "columns": 12,
+  "gap": 20,
+  "children": [
+    { "node": { "element_id": "metric_1" }, "span": 3 },
+    { "node": { "element_id": "metric_2" }, "span": 3 },
+    { "node": { "element_id": "metric_3" }, "span": 3 },
+    { "node": { "element_id": "metric_4" }, "span": 3 }
+  ]
+}
+```
+
+#### 4.2 Two-Column Content Layout
+Use a 12-column grid with 6-span children for side-by-side content.
+
+```json
+{
+  "type": "grid",
+  "columns": 12,
+  "gap": 20,
+  "children": [
+    { "node": { "element_id": "instructions" }, "span": 6 },
+    { "node": { "element_id": "history" }, "span": 6 }
+  ]
+}
+```
+
+#### 4.3 Hierarchical Navigation with Tabs
+Use tabs for major sections, VStack within each tab for vertical content flow.
+
+**Rule:** Tabs should represent distinct views or workflows, not minor variations. Each tab should be independently useful.
+
+### 5.0 Data Field Interpolation Patterns
+
+#### 5.1 Direct Field Reference
+For simple field access from data sources:
+```json
+"value": "{{response_rate}}"
+```
+
+#### 5.2 Nested Field Access
+Use dot notation for nested objects:
+```json
+"value": "{{patient.demographics.age}}"
+```
+
+#### 5.3 Mixed Templates
+Combine static text with multiple interpolations:
+```json
+"subtitle": "{{date}} • {{uploaded_by}} • {{format}}"
+```
+
+#### 5.4 Parameter Mapping in Actions
+Pass dynamic data from the current context to actions:
+```json
+"action": {
+  "label": "View",
+  "action_id": "view_details",
+  "params": {
+    "patient_id": "{{patient_id}}",
+    "visit_id": "{{visit_id}}"
+  }
+}
+```
+
+### 6.0 Common Pitfalls to Avoid (Anti-Patterns)
+
+1. **Hardcoding Workflow IDs as Strings**
+   - ❌ `"workflow_id": "efficacy_analysis_v2"`
+   - ✅ `"workflow_id": 123` (integer ID from database)
+
+2. **Deeply Nested Layouts**
+   - ❌ More than 3 levels of nesting creates unmaintainable manifests
+   - ✅ Use flat element definitions with single-purpose components
+
+3. **Duplicate Data Sources**
+   - ❌ Defining the same tool invocation multiple times
+   - ✅ Define once, reference from multiple UI elements via `data_source_id`
+
+4. **Missing Empty States**
+   - ❌ DataTable with no `empty_message` shows confusing blank space
+   - ✅ Always provide user-friendly empty state messages
+
+5. **Unvalidated Action References**
+   - ❌ Referencing `action_id` that doesn't exist in `actions` dictionary
+   - ✅ Ensure all `action_id` values have corresponding action definitions
+
+6. **Overly Complex Single Components**
+   - ❌ A single DataTable trying to display metrics, charts, and actions
+   - ✅ Break into multiple focused components (MetricCard, ChartCard, DataTable)

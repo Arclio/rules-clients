@@ -1,0 +1,357 @@
+---
+description: "The authoritative syntax reference for Application manifest JSON structure. Defines the schema for metadata, layout nodes, UI elements, data sources, and actions."
+globs: []
+alwaysApply: false
+---
+## Rule: Application Manifest Syntax Reference
+
+This rule defines the precise JSON structure for an Application manifest.
+
+### 1.0 Root Manifest Structure
+
+Every application manifest must be a JSON object with these top-level keys:
+
+| Key | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `metadata` | `object` | **Yes** | Application identity and versioning information. |
+| `layout` | `LayoutNode` | **Yes** | The root layout definition describing visual structure. |
+| `ui_elements` | `object` | **Yes** | Dictionary of UI element instances, keyed by unique `element_id`. |
+| `data_sources` | `object` | No | Dictionary of data source definitions for fetching data. |
+| `actions` | `object` | No | Dictionary of action definitions for user-triggered operations. |
+
+### 2.0 Metadata Schema
+
+```typescript
+{
+  "metadata": {
+    "id": string,              // Unique application identifier
+    "name": string,            // Display name (e.g., "Efficacy Dashboard")
+    "description": string?,    // Optional description
+    "version": string,         // Semantic version (e.g., "1.0.0")
+    "icon": string?,          // Optional icon identifier or URL
+    "created_at": string,      // ISO 8601 timestamp
+    "updated_at": string,      // ISO 8601 timestamp
+    "created_by": string,      // User ID
+    "organization_id": string  // Organization scope
+  }
+}
+```
+
+**Validation Rules:**
+- `name` must be 1-255 characters
+- `version` must follow semantic versioning (e.g., "1.0.0", "2.1.3")
+- Timestamps must be valid ISO 8601 format
+
+### 3.0 Layout Node Schema
+
+The `layout` key contains a recursive structure of **Layout Nodes**. Each node is either a container (with children) or an element reference (leaf node).
+
+#### 3.1 VStack (Vertical Stack)
+
+```typescript
+{
+  "type": "vstack",
+  "gap": number?,                // Spacing in pixels (default: 16)
+  "alignment": "start" | "center" | "end" | "stretch"?,  // Default: "stretch"
+  "padding": number | Padding?,  // Container padding (default: 0)
+  "children": LayoutNode[]       // Array of child layout nodes
+}
+```
+
+#### 3.2 HStack (Horizontal Stack)
+
+```typescript
+{
+  "type": "hstack",
+  "gap": number?,
+  "alignment": "start" | "center" | "end" | "stretch"?,
+  "justify": "start" | "center" | "end" | "space-between" | "space-around"?,
+  "padding": number | Padding?,
+  "wrap": boolean?,             // Allow wrapping (default: false)
+  "children": LayoutNode[]
+}
+```
+
+#### 3.3 Grid
+
+```typescript
+{
+  "type": "grid",
+  "columns": number | "auto",   // Number of columns or "auto" for responsive
+  "gap": number?,               // Gap between items (default: 16)
+  "padding": number | Padding?,
+  "children": GridChild[]       // Grid children with span configuration
+}
+
+// GridChild structure:
+{
+  "node": LayoutNode,          // The child node (can be any LayoutNode)
+  "span": number?,             // Columns to occupy (default: 1)
+  "row_span": number?          // Rows to occupy (default: 1)
+}
+```
+
+**Grid System:** When `columns` is a number, grid uses a 12-column base. `span` values specify how many of the 12 columns each child occupies.
+
+#### 3.4 Tabs
+
+```typescript
+{
+  "type": "tabs",
+  "default_tab": string?,      // ID of default active tab (default: first tab)
+  "tabs": TabDefinition[]      // Array of tab definitions
+}
+
+// TabDefinition structure:
+{
+  "id": string,               // Unique tab identifier
+  "label": string,            // Display label
+  "icon": string?,           // Optional icon identifier
+  "content": LayoutNode      // Layout to render when tab is active
+}
+```
+
+#### 3.5 Element Reference (Leaf Node)
+
+```typescript
+{
+  "element_id": string        // Key in the ui_elements dictionary
+}
+```
+
+**CRITICAL:** This is the only way to reference UI elements from the layout tree. The `element_id` must exist as a key in the `ui_elements` dictionary.
+
+#### 3.6 Padding Schema
+
+```typescript
+type Padding = number | {
+  top?: number,
+  right?: number,
+  bottom?: number,
+  left?: number
+}
+```
+
+### 4.0 UI Element Schema
+
+Each entry in the `ui_elements` dictionary defines a configured component instance:
+
+```typescript
+{
+  "ui_elements": {
+    "<element_id>": {
+      "component": string,           // Component name (must exist in registry)
+      "props": object,               // Component-specific props
+      "visible_when": VisibilityCondition?  // Optional conditional rendering
+    }
+  }
+}
+```
+
+**VisibilityCondition Schema:**
+```typescript
+{
+  "type": "data_exists" | "data_equals" | "user_has_role",
+  "data_source_id": string?,     // Reference to data source
+  "field": string?,             // Field path for data_equals
+  "value": any?,                // Expected value for data_equals
+  "role": string?               // Required role for user_has_role
+}
+```
+
+**Validation Rules:**
+- `element_id` must be unique within the manifest
+- `component` must match a registered component name
+- `props` must conform to the component's expected prop schema
+
+### 5.0 Data Source Schema
+
+```typescript
+{
+  "data_sources": {
+    "<data_source_id>": {
+      "type": "mcp_tool" | "static",
+      "tool_name": string?,        // For type: "mcp_tool"
+      "params": object?,           // Parameters for tool invocation
+      "data": any[]?,              // For type: "static", the static data
+      "transformations": TransformationStep[]?, // Array of transformation steps
+      "refresh_interval": number?, // Auto-refresh interval in seconds
+      "cache_ttl": number?         // Cache time-to-live in seconds
+    }
+  }
+}
+
+// Transformation step types
+type TransformationStep =
+  | { "operation": "json_path_extract", "path": string }
+  | { "operation": "select_fields", "fields": Record<string, string> }
+  | { "operation": "slice", "start"?: number, "end"?: number, "limit"?: number }
+  | { "operation": "get_item", "path": string };
+```
+
+**Transformations:** The `transformations` array allows you to reshape data returned by a data source before it reaches UI components. Transformations are applied sequentially on the backend. This is essential when MCP tools return complex nested structures but your UI components expect specific data formats.
+
+**Supported Transformations:**
+
+| Operation | Purpose | Example Use Case |
+|-----------|---------|------------------|
+| `json_path_extract` | Extract nested data using JSON path notation | Extract `data.patients` array from response |
+| `select_fields` | Select and rename specific fields | Map `patient_uuid` to `id` |
+| `slice` | Limit array size | Get first 5 rows |
+| `get_item` | Extract a single value | Get `summary.total` for MetricCard |
+
+**MCP Tool Data Source Example (without transformations):**
+```json
+"recent_uploads": {
+  "type": "mcp_tool",
+  "tool_name": "supabase__execute_sql",
+  "params": { "query": "SELECT * FROM uploads LIMIT 5" },
+  "cache_ttl": 60
+}
+```
+
+**MCP Tool Data Source with Transformations:**
+```json
+"assessments_table": {
+  "type": "mcp_tool",
+  "tool_name": "api.get_assessments",
+  "transformations": [
+    { "operation": "json_path_extract", "path": "results.data" },
+    { "operation": "slice", "limit": 10 },
+    {
+      "operation": "select_fields",
+      "fields": {
+        "patient_uuid": "id",
+        "full_name": "name",
+        "response_category": "response"
+      }
+    }
+  ],
+  "cache_ttl": 120
+}
+```
+
+**MetricCard Data Source (Extract Single Value):**
+```json
+"total_patients": {
+  "type": "mcp_tool",
+  "tool_name": "database.get_patient_count",
+  "transformations": [
+    { "operation": "get_item", "path": "data.count" }
+  ]
+}
+```
+
+**Static Data Source Example:**
+```json
+"requirements": {
+  "type": "static",
+  "data": [
+    { "field": "patient_id", "required": true },
+    { "field": "assessment_date", "required": true }
+  ]
+}
+```
+
+### 6.0 Action Schema
+
+Actions define user-triggered operations. There are four action types:
+
+#### 6.1 Workflow Action
+
+```typescript
+{
+  "type": "trigger_workflow",
+  "workflow_id": number,           // Database ID of the workflow (integer)
+  "params": object?,              // Static parameters
+  "param_mapping": object?,       // Dynamic parameter mapping from context
+  "confirmation": {               // Optional confirmation dialog
+    "title": string,
+    "message": string,
+    "confirm_label": string?,     // Default: "Confirm"
+    "cancel_label": string?       // Default: "Cancel"
+  }?
+}
+```
+
+**CRITICAL:** `workflow_id` must be an integer (database ID), not a string name.
+
+#### 6.2 MCP Tool Action
+
+```typescript
+{
+  "type": "invoke_mcp_tool",
+  "tool_name": string,            // Fully qualified tool name
+  "params": object?,
+  "param_mapping": object?,       // Dynamic parameter mapping
+  "on_success": {
+    "message": string?,           // Success toast message
+    "refresh_data_sources": string[]?,  // Data sources to refresh
+    "navigate_to": string?        // Optional navigation target
+  }?,
+  "on_error": {
+    "message": string?            // Error message template
+  }?
+}
+```
+
+#### 6.3 Navigation Action
+
+```typescript
+{
+  "type": "navigate",
+  "target": string,               // Target URL or application ID
+  "params": object?               // URL parameters
+}
+```
+
+#### 6.4 Modal Action
+
+```typescript
+{
+  "type": "open_modal",
+  "modal_id": string,             // ID of modal in ui_elements
+  "params": object?               // Parameters to pass to modal
+}
+```
+
+### 7.0 ActionReference Schema
+
+Actions are referenced from UI element props using `ActionReference` objects:
+
+```typescript
+{
+  "label": string,               // Button text
+  "action_id": string,           // Key in actions dictionary
+  "params": object?,             // Parameter overrides for the action
+  "style": "primary" | "secondary" | "danger"?,  // Button style
+  "icon": string?                // Optional icon identifier
+}
+```
+
+**Parameter Merging:** Parameters in `ActionReference.params` override parameters in the `ActionDefinition`.
+
+### 8.0 Data Field Interpolation
+
+Template strings support dynamic data insertion using `{{field_name}}` syntax:
+
+**Syntax Rules:**
+- **Simple Field:** `{{field_name}}` references a top-level field
+- **Nested Field:** `{{user.email}}` uses dot notation for nested properties
+- **Array Index:** `{{items[0].name}}` accesses array elements
+- **Mixed Templates:** `"Total: {{count}} items ({{percentage}}%)"` combines static and dynamic text
+
+**Security:** All interpolated values are automatically HTML-escaped to prevent XSS attacks.
+
+### 9.0 Validation Checklist
+
+Before deploying a manifest, verify:
+
+- [ ] All `workflow_id` values are integers that exist in the database
+- [ ] All `action_id` references exist in the `actions` dictionary
+- [ ] All `data_source_id` references exist in the `data_sources` dictionary
+- [ ] All `element_id` references in layout exist in `ui_elements`
+- [ ] All `component` values match registered component names
+- [ ] Manifest size is under 1MB
+- [ ] Required top-level keys (`metadata`, `layout`, `ui_elements`) are present
+- [ ] No circular references in layout tree

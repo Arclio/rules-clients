@@ -1,0 +1,116 @@
+---
+description: "Provides a detailed, step-by-step technical breakdown of the final V7 Safety Population adverse events workflow, including full SQL queries and data flow explanations."
+globs: []
+alwaysApply: false
+---
+
+## Rule: Cellectar Safety Workflow - V7 Implementation
+
+This rule provides a definitive technical breakdown of the final V7 production workflow for generating the **Safety Population** Treatment-Emergent Adverse Events (TEAE) report.
+
+### 1.0 Overview
+
+This workflow automates the entire process of data cleaning, population calculation, event ranking, and statistical aggregation to produce a 100% accurate and reproducible summary table. It follows the **"Database-First"** and **"Two-View"** architecture defined in `cellectar/WORKFLOW_ARCHITECTURE.mdc`.
+
+### 2.0 Architectural Prerequisites
+
+This workflow requires the existence of two specific database views. Steps 1 and 2 of this workflow are responsible for creating or replacing these views to ensure the logic is always up-to-date.
+
+1.  **`v_subject_populations`**: The source of truth for the patient cohort.
+2.  **`v_ranked_treatment_emergent_aes`**: The source of truth for the cleaned and ranked adverse events. This view includes data sanitization (`TRIM()`) on key text fields.
+
+### 3.0 Step-by-Step Workflow Breakdown
+
+The workflow executes in a sequence of 10 deterministic steps.
+
+#### **Step 1 & 2: Create/Replace Database Views**
+-   **Purpose:** To establish the foundational, reusable data sources for the entire process. These steps are identical to the mITT workflow.
+-   **Mechanism:** Two `supabase__execute_sql` tool calls execute the `CREATE OR REPLACE VIEW` commands for `v_subject_populations` and `v_ranked_treatment_emergent_aes` respectively.
+
+#### **Step 3: Get Total Safety Population (N)**
+-   **Purpose:** To calculate the correct denominator (`N`) for the Safety population.
+-   **Mechanism:** A `supabase__execute_sql` tool call executes a simple, fast query against the dedicated population view.
+-   **SQL Query:**
+    ```sql
+    SELECT COUNT("Subject") as total_safety_subjects
+    FROM v_subject_populations
+    WHERE is_safety = true;
+    ```
+
+#### **Step 4: Parse Population Count**
+-   **Purpose:** To extract the integer value of `N` from the raw SQL tool output.
+-   **Mechanism:** A `transform` step uses `regex_extract`, `json_parse`, and a corrected `json_path_extract` path to get the final numeric value. The output is stored in the `${step4.total_subjects}` variable.
+
+#### **Step 5 & 6 & 7: Prepare the Google Sheet and Headers**
+-   **Purpose:** To create the destination spreadsheet and populate the report headers with the correct metadata for the Safety population.
+-   **Mechanism:**
+    -   Step 5 creates a new Google Sheet with the "Safety Population" title.
+    -   Step 6 uses a small `llm` call to reliably construct the header array, embedding the `${step4.total_subjects}` variable and using the "Safety Population" title.
+    -   Step 7 writes these headers to the newly created sheet.
+
+#### **Step 8: Generate Final Report Data with SQL**
+-   **Purpose:** To perform the final, complex statistical aggregation and formatting for the Safety population.
+-   **Mechanism:** A single, powerful `supabase__execute_sql` tool call executes a multi-CTE query that is parameterized with the `${step4.total_subjects}` value and filters all data on `is_safety = true`. It outputs a perfectly formed JSON array of arrays.
+-   **SQL Query:**
+    ```sql
+    WITH N_Value AS (SELECT ${step4.total_subjects} AS val),
+    PT_Counts AS (
+        SELECT "AETERM_SOC", "AETERM_PT", grade, COUNT(DISTINCT "Subject") as subject_count
+        FROM v_ranked_treatment_emergent_aes
+        WHERE is_safety = true AND "RELCLR" IN ('Definitely Related', 'Probably Related', 'Possibly Related')
+        GROUP BY "AETERM_SOC", "AETERM_PT", grade
+    ),
+    SOC_All_Grades_Counts AS (
+        SELECT "AETERM_SOC", COUNT(DISTINCT "Subject") as unique_subject_count
+        FROM v_ranked_treatment_emergent_aes
+        WHERE is_safety = true AND "RELCLR" IN ('Definitely Related', 'Probably Related', 'Possibly Related')
+        GROUP BY "AETERM_SOC"
+    ),
+    SOC_Grade_Counts AS (
+        SELECT "AETERM_SOC", grade, COUNT(DISTINCT "Subject") as subject_count
+        FROM v_ranked_treatment_emergent_aes
+        WHERE is_safety = true AND "RELCLR" IN ('Definitely Related', 'Probably Related', 'Possibly Related')
+        GROUP BY "AETERM_SOC", grade
+    ),
+    Final_SOC_Summary AS (
+        SELECT s."AETERM_SOC", s."AETERM_SOC" as "SOC_PT_Name", 1 as row_type, NULL as "AETERM_PT",
+            CONCAT(a.unique_subject_count, ' (', ROUND(100.0 * a.unique_subject_count / (SELECT val FROM N_Value), 1), '%)') as "All Grades",
+            CONCAT(COALESCE(SUM(CASE WHEN s.grade = 1 THEN s.subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN s.grade = 1 THEN s.subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 1",
+            CONCAT(COALESCE(SUM(CASE WHEN s.grade = 2 THEN s.subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN s.grade = 2 THEN s.subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 2",
+            CONCAT(COALESCE(SUM(CASE WHEN s.grade = 3 THEN s.subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN s.grade = 3 THEN s.subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 3",
+            CONCAT(COALESCE(SUM(CASE WHEN s.grade = 4 THEN s.subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN s.grade = 4 THEN s.subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 4",
+            CONCAT(COALESCE(SUM(CASE WHEN s.grade = 5 THEN s.subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN s.grade = 5 THEN s.subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 5"
+        FROM SOC_Grade_Counts s JOIN SOC_All_Grades_Counts a ON s."AETERM_SOC" = a."AETERM_SOC"
+        GROUP BY s."AETERM_SOC", a.unique_subject_count
+    ),
+    Final_PT_Details AS (
+        SELECT "AETERM_SOC", CONCAT('  ', "AETERM_PT") as "SOC_PT_Name", 2 as row_type, "AETERM_PT",
+            CONCAT(SUM(subject_count), ' (', ROUND(100.0 * SUM(subject_count) / (SELECT val FROM N_Value), 1), '%)') as "All Grades",
+            CONCAT(COALESCE(SUM(CASE WHEN grade = 1 THEN subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN grade = 1 THEN subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 1",
+            CONCAT(COALESCE(SUM(CASE WHEN grade = 2 THEN subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN grade = 2 THEN subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 2",
+            CONCAT(COALESCE(SUM(CASE WHEN grade = 3 THEN subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN grade = 3 THEN subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 3",
+            CONCAT(COALESCE(SUM(CASE WHEN grade = 4 THEN subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN grade = 4 THEN subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 4",
+            CONCAT(COALESCE(SUM(CASE WHEN grade = 5 THEN subject_count ELSE 0 END), 0), ' (', ROUND(100.0 * COALESCE(SUM(CASE WHEN grade = 5 THEN subject_count ELSE 0 END), 0) / (SELECT val FROM N_Value), 1), '%)') as "Grade 5"
+        FROM PT_Counts
+        GROUP BY "AETERM_SOC", "AETERM_PT"
+    )
+    SELECT json_agg(json_build_array("SOC_PT_Name", "All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5")) as spreadsheet_rows
+    FROM (
+        SELECT "AETERM_SOC", "SOC_PT_Name", row_type, "AETERM_PT", "All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5" FROM Final_SOC_Summary
+        UNION ALL
+        SELECT "AETERM_SOC", "SOC_PT_Name", row_type, "AETERM_PT", "All Grades", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5" FROM Final_PT_Details
+    ) as final_data
+    ORDER BY "AETERM_SOC", row_type, "AETERM_PT";
+    ```
+
+#### **Step 9: Extract Spreadsheet Rows**
+-   **Purpose:** To parse the clean JSON output from the SQL query.
+-   **Mechanism:** A `transform` step that extracts the raw JSON, parses it, and then uses `json_path_extract` to pull out the final array of rows, storing it in `${step9.spreadsheet_rows}`.
+
+#### **Step 10: Add Data to Spreadsheet**
+-   **Purpose:** To write the final, deterministically generated data table into the Google Sheet.
+-   **Mechanism:** A `google-workspace__sheets_append_rows` tool call that writes the array from the previous step directly into the sheet.
+
+### 4.0 Final Output
+
+The workflow concludes by producing a new Google Sheet containing the TEAE summary table for the Safety Population. The data is 100% deterministically generated by the database, ensuring it is accurate, reproducible, and auditable.

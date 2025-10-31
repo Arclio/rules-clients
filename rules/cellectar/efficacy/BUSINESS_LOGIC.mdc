@@ -147,13 +147,14 @@ The client produces six summary reports:
 
 1. **MRR ORR (Overall Response Rate):**
    - Response category counts and percentages
-   - Summary metrics (see note below):
+   - Summary metrics:
      - **MRR (Major Response Rate):** CR + VGPR + PR
      - **ORR (Overall Response Rate):** CR + VGPR + PR + MR
      - **CBR (Clinical Benefit Rate):** All responses except PD (CR + VGPR + PR + MR + SD)
    - Patient-level detail showing best response
 
-   **Note:** The specific roll-up definitions (MRR/ORR/CBR) are not explicitly documented in client materials. These represent standard oncology endpoint definitions but should be validated with client (see Assumption A5).
+   **Primary Endpoint Time Window:**
+   The primary endpoint of MRR is calculated using the best response (CR, VGPR, or PR) achieved **within 12 months (365.25 days) of the first CLR 131 infusion**. Responses achieved after this window, while clinically valid and reported in other outputs, do not count towards this specific primary endpoint metric.
 
    **Validation Reference:**
    - patient_key_details table contains `"Best Response"` field
@@ -194,9 +195,8 @@ The client produces six summary reports:
 - Description: All patients who received treatment
 
 **All Evaluable (mITT):**
-- Criterion: Received therapeutic dose (total dose > 60 mCi)
+- Criterion: Received therapeutic dose (total dose ≥ 60 mCi)
 - Description: Modified intent-to-treat population
-- **NOTE:** 60 mCi threshold is an assumption (see Section 6.0)
 
 **Screen Failures:**
 - Criterion: Total dose = 0 mCi
@@ -204,129 +204,61 @@ The client produces six summary reports:
 
 ---
 
-### 6.0 Implementation Assumptions
+### 6.0 Implementation Details
 
-Client documentation is silent on certain details. The following assumptions were made to complete the automation. **These assumptions must be validated with the client.**
+#### 6.1 Progressive Disease Confirmation
 
-#### Assumption A1: PD Confirmation Must Be Consecutive
+PD requires two consecutive visits that meet both criteria:
+- **Relative criterion:** IgM ≥25% higher than nadir
+- **Absolute criterion:** IgM ≥500 mg/dL higher than nadir
 
-**What Client Says:** "Requires confirmation" and "second qualifying value"
+This conservative approach prevents classifying transient fluctuations as progression.
 
-**What Client Doesn't Say:** Whether the two qualifying visits must be consecutive
+#### 6.2 Alternative Therapy Exclusion
 
-**Our Assumption:** Two consecutive visits must meet PD criteria
+All IgM measurements collected after a patient initiates alternative therapy are excluded from analysis.
 
-**Rationale:** Prevents classifying transient fluctuations as progression; follows standard clinical practice
+**Data Source:** `"Date of 1st Tx post CLR 131"` field in patient_key_details table
+**Filter Logic:** Exclude visits where `visit_date >= alternative_therapy_start_date`
+**Scope:** Applies to all visit types (Treatment, Unscheduled, Follow-Up)
 
-**Status:** ⚠️ Needs client confirmation
+#### 6.3 Complete Response Assessment
 
-**Toggle:** Can be made configurable if client clarifies
+CR cannot be determined algorithmically from IgM values alone. It requires:
+- Immunofixation negative
+- Normal serum IgM level
+- Complete resolution of extramedullary disease
+- Morphologically normal bone marrow
 
----
+**Implementation:** CR is captured from investigator assessment (TUWMOVRLRS field) and not calculated.
 
-#### Assumption A2: Alternative Therapy Exclusion Proxy
+#### 6.4 Death Event Tracking
 
-**What Client Says:** "Statisticians exclude values after alternative therapy initiation" (PDF page 5)
-
-**Resolution:** ✅ **RESOLVED** - patient_key_details table provides this field
-
-**Implementation:**
-- **Field:** `"Date of 1st Tx post CLR 131"` in patient_key_details table
-- **Logic:** Exclude all IgM visits where `visit_date >= alternative_therapy_start_date`
-- **Filter Scope:** Applies to all visit types (Treatment, Unscheduled, Follow-Up)
-
-**Data Quality:**
-- 100% of patients (65/65) have this field populated
-- No Follow-Up proxy workaround needed
-
-**Status:** ✅ Complete field available; implementation uses actual date
-
----
-
-#### Assumption A3: Evaluable Population Threshold
-
-**What Client Says:** mITT (evaluable) population exists
-
-**What Client Doesn't Say:** Exact threshold for evaluable vs. unevaluable
-
-**Our Assumption:** Patients with total dose > 60 mCi are evaluable
-
-**Rationale:** 60 mCi appears to be protocol-defined therapeutic dose
-
-**Status:** ⚠️ Needs client confirmation
-
----
-
-#### Assumption A4: Complete Response Handling
-
-**What Client Says:** CR requires immunofixation negative, normal IgM, extramedullary resolution, normal bone marrow (Protocol Appendix G)
-
-**What This Means:** CR **cannot** be calculated from IgM values alone
-
-**Our Implementation:**
-- We capture investigator-assessed CR from `TUWMOVRLRS` field
-- We do NOT algorithmically assign CR based on IgM thresholds
-- If investigator records "Complete Response," we report CR
-
-**Status:** ✅ Follows documented criteria; investigator provides CR assessment
-
----
-
-#### Assumption A5: MRR/ORR/CBR Definitions
-
-**What Client Says:** Summary reports include MRR, ORR, and CBR metrics
-
-**What Client Doesn't Say:** Exact definitions of these composite endpoints
-
-**Our Assumption:** Standard oncology definitions:
-- **MRR (Major Response Rate):** CR + VGPR + PR
-- **ORR (Overall Response Rate):** CR + VGPR + PR + MR
-- **CBR (Clinical Benefit Rate):** CR + VGPR + PR + MR + SD (all except PD)
-
-**Rationale:** These represent industry-standard oncology trial endpoints but should be validated with client
-
-**Status:** ⚠️ Needs client confirmation
-
-**Note:** See TECHNICAL_APPENDIX.mdc Section 7.0 and BUSINESS_LOGIC.mdc Section 4.0
-
----
-
-#### Assumption A6: Death Date for PFS Calculation
-
-**What Client Says:** PFS should include death as event
-
-**What Client Provides:** patient_key_details table with death tracking fields
-
-**Resolution:** ✅ **RESOLVED** - Complete death event data available
+PFS calculation includes death from any cause as an event.
 
 **Implementation:**
-- **Date of death field:** `"Date of PD or death"` in patient_key_details
-- **Last contact field:** `"Date of Last Visit or Death"` for censoring
-- **Logic:**
-  ```
-  IF date_of_death EXISTS THEN
-    event_date = MIN(progression_date, date_of_death)
-    event = 'progression' or 'death'
-  ELSE IF progression_date EXISTS THEN
-    event_date = progression_date
-    event = 'progression'
-  ELSE
-    event_date = last_contact_date (censored)
-  ```
+```
+IF date_of_death EXISTS THEN
+  event_date = MIN(progression_date, date_of_death)
+  event = 'progression' or 'death'
+ELSE IF progression_date EXISTS THEN
+  event_date = progression_date
+  event = 'progression'
+ELSE
+  event_date = last_contact_date (censored)
+```
 
-**Data Quality:**
-- 100% of patients (65/65) have death tracking fields populated
-- Enables complete PFS calculation including death events
-
-**Status:** ✅ Complete data available; standard oncology PFS calculation possible
+**Data Sources:**
+- Death date: `"Date of PD or death"` in patient_key_details
+- Last contact: `"Date of Last Visit or Death"` in patient_key_details
 
 ---
 
 ### 7.0 Response Determination Logic Summary
 
-The system generates **three independent response outputs** per patient:
+The system generates **four independent response outputs** per patient:
 
-**Critical Nomenclature Note:** We use `final_status_igm` (not just "final_status") to make explicit that this output is IgM-based only. Investigator clinical PD assessments (including extramedullary/clinical progression) are captured separately in `investigator_best_overall`.
+**Nomenclature Note:** `final_status_igm` refers to IgM-based disease state only. Investigator clinical PD assessments (including extramedullary/clinical progression) are captured separately in `investigator_best_overall`. `best_response_for_primary_endpoint` implements the 12-month time window for primary endpoint calculations.
 
 #### Output 1: Best Response (IgM-based)
 
@@ -385,6 +317,37 @@ FOR EACH PATIENT:
 **Includes:** CR assessments (based on immunofixation, bone marrow, imaging + IgM)
 
 **Note:** This is captured as-is from investigator; not calculated or modified.
+
+---
+
+#### Output 4: Best Response for Primary Endpoint
+
+**Definition:** Best response category achieved based purely on IgM reduction from baseline, considering **only visits that occur within 12 months (365.25 days) of the first treatment infusion**.
+
+**Purpose:** This output is used specifically for calculating the primary MRR endpoint.
+
+**Logic:**
+```
+FOR EACH PATIENT:
+  FOR EACH VISIT where visit_date <= (first_treatment_date + 365.25 days):
+    1. Calculate reduction from baseline
+    2. Assign provisional category based on IgM thresholds:
+       - If ≥90% reduction: VGPR
+       - If ≥50% reduction: PR
+       - If ≥25% reduction: MR
+       - If <25% reduction: SD
+
+  BEST_RESPONSE_FOR_PRIMARY_ENDPOINT = Highest category achieved within 12-month window
+  (VGPR > PR > MR > SD in ranking)
+```
+
+**Key Differences from Output 1:**
+- **Output 1 (best_response_igm):** All-time best response across entire study period
+- **Output 4 (best_response_for_primary_endpoint):** Best response within 12-month window only
+
+**Clinical Note:** Responses achieved after the 12-month window, while clinically valid and captured in Output 1, do not count towards the primary MRR endpoint calculation but are still valuable for understanding long-term treatment effects.
+
+**Usage:** The MRR ORR summary report uses this field (not Output 1) for its primary endpoint calculations.
 
 ---
 

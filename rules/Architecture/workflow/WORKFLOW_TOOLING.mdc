@@ -1,7 +1,7 @@
 ---
 description: "Defines the roles, capabilities, and specific usage patterns for the tools available in the Arclio Workflow Engine, including MCP tools, the LLM tool, and container steps."
 globs: []
-alwaysApply: true
+alwaysApply: false
 ---
 ## Rule: Workflow Tooling Guide
 

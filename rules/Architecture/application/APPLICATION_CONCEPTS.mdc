@@ -1,0 +1,82 @@
+---
+description: "Defines the fundamental concepts, purpose, and design principles of Arclio Applications. This is the starting point for understanding how to build schema-driven, composable user interfaces."
+globs: []
+alwaysApply: false
+---
+## Rule: Application Core Concepts
+
+This rule establishes the foundational understanding of the Arclio Application system.
+
+### 1.0 What is an Arclio Application?
+
+An **Arclio Application** is a declaratively defined, composable user interface that combines data, workflows, and MCP tools into a cohesive, domain-specific experience. Applications are defined by JSON manifests that describe the UI structure, layout, data sources, and actions without requiring code deployments.
+
+Applications transform complex data and workflow orchestration into intuitive, SaaS-like interfaces for non-technical users.
+
+### 2.0 The Application Manifest
+
+The **Application Manifest** is a JSON document that serves as the single source of truth for an application's structure and behavior. It consists of five primary sections:
+
+1. **Metadata:** Application identity, versioning, and ownership information.
+2. **Layout:** The hierarchical structure defining how UI elements are arranged.
+3. **UI Elements:** Configured instances of reusable components with their props.
+4. **Data Sources:** Definitions of how to fetch data (typically via MCP tools).
+5. **Actions:** Definitions of user-triggered operations (workflows or MCP tool invocations).
+
+### 3.0 The Two-Tier Component Model
+
+The Application system is built on a clear separation of concerns:
+
+**Tier 1: UI Elements (Building Blocks)**
+- Atomic, reusable Vue components with well-defined props (e.g., `MetricCard`, `DataTable`)
+- Registered in the Component Registry by name
+- Accept configuration via the `props` object
+- Handle rendering, interaction, and local state
+
+**Tier 2: Applications (Compositions)**
+- High-level containers defined by JSON manifests
+- Compose and arrange UI Elements into structured experiences
+- Define data flow through data source references
+- Trigger actions through workflow/tool invocations
+
+### 4.0 The Three Foundational Patterns
+
+All applications are built on three core architectural patterns:
+
+#### 4.1 Backend as Manifest Store
+The backend's role is to:
+- Store application manifests as JSON documents with organization-level scoping
+- Provide endpoints to execute data sources (MCP tool invocations)
+- Provide endpoints to execute actions (workflow triggers)
+
+The backend does NOT parse or render manifests—that is the frontend's responsibility.
+
+#### 4.2 Component Registry Model
+The frontend maintains a **Component Registry** that maps component names (strings in the manifest) to actual Vue component implementations. This decouples UI structure from code, enabling:
+- Dynamic UI generation from manifests
+- Versioning and A/B testing without deployments
+- Organization-specific component customization
+
+#### 4.3 Actions as Primitives
+Following the platform's core principle, all user-initiated actions are executed via:
+- **Workflows:** Multi-step orchestrated processes (referenced by `workflow_id`)
+- **MCP Tools:** Single-function invocations (referenced by `tool_name`)
+
+UI Elements do not call traditional backend API endpoints directly. They trigger these primitives, which are executed by existing infrastructure.
+
+### 5.0 Core Design Principles
+
+Applications must be designed with these principles:
+
+1. **Declarative Structure:** The manifest describes WHAT the UI should be, not HOW to build it. Layout, components, data, and actions are all declared, not coded.
+
+2. **Data-Driven Rendering:** UI Elements are configured with static props or dynamic references to data sources. The `{{field_name}}` syntax enables template interpolation from data source results.
+
+3. **Graceful Degradation:** Applications must handle failures without crashing:
+   - Missing components → show placeholder
+   - Failed data sources → show empty state or cached data
+   - Invalid workflow references → disable action buttons
+
+4. **Organization Scoping:** Applications follow the same multi-tenant isolation model as workflows and MCP servers. Access control is enforced through ownership and public flags.
+
+5. **Separation of Rendering Logic:** The backend validates manifest structure (required keys, workflow references exist). The frontend validates component references, data source types, and renders the UI.

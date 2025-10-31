@@ -1,7 +1,7 @@
 ---
 description: "The authoritative syntax reference for the .wf.md file format. This rule defines the structure of the YAML frontmatter, step definitions, and variable resolution."
 globs: []
-alwaysApply: true
+alwaysApply: false
 ---
 ## Rule: Workflow Syntax Reference
 
@@ -77,3 +77,29 @@ When a step is declared with `**Type:** transform`, its `**Transformations:**` b
 | :--- | :--- | :--- |
 | `regex_extract` | `pattern` (string), `group` (integer, optional) | Extracts a capturing group from a string using a regular expression. `group` defaults to `1`. |
 | `json_parse` | (None) | Parses a string value into a JSON object or array. The workflow will fail if the string is not valid JSON. |
+| `json_path_extract` | `path` (string) | Navigates to a specific field or element within a JSON object or array using dot notation and array indexing. Path syntax supports field access (`field.subfield`) and array indexing (`[0]`, `field[0]`, `[0].field`). The final extracted value becomes the new `current_value` for subsequent operations. |
+
+**Common Transform Pattern Example:**
+
+Processing database query results wrapped in untrusted-data tags:
+
+```markdown
+**Type:** transform
+**Inputs:**
+  data_to_clean: ${step1.raw_query_result}
+**Transformations:**
+  - operation: regex_extract
+    pattern: '<untrusted-data[^>]+>\\s*(\\[.*\\]|\\{.*\\})\\s*</untrusted-data[^>]+>'
+    group: 1
+  - operation: json_parse
+  - operation: json_path_extract
+    path: "[0].report_data"
+**Outputs:**
+  clean_data: array = result
+```
+
+This pattern:
+1. Extracts JSON from security wrapper using regex
+2. Parses the JSON string into a structured object/array
+3. Navigates to the specific field containing the data
+4. Outputs the final extracted value as `result`
