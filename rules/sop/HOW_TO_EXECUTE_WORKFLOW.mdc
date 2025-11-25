@@ -1,0 +1,116 @@
+---
+description: "Standard Operating Procedure: Executing a workflow. Tactical steps for the agent to follow when running a workflow on behalf of a user."
+globs: []
+alwaysApply: false
+---
+## SOP: Execute Workflow
+
+**Context:** This rule is loaded when the user is on the workflow execution page. The agent is already viewing a specific workflow's execution interface.
+
+### Step 1: Check if Parameters are Required
+
+**Look in the context for:**
+- Parameter definitions (if the workflow uses `${workflow.params.X}`)
+- Required vs. optional parameters
+- Parameter types (string, number, object, etc.)
+
+**If no parameters are required:** Skip to Step 3.
+
+### Step 2: Fill Required Parameters
+
+Use `ui_fill_state` to set the workflow parameters:
+
+```json
+{
+  "store_name": "workflow",
+  "state_path": "workflowParams",
+  "updates": {
+    "param_name_1": "value",
+    "param_name_2": 42,
+    "nested_param": {
+      "key": "value"
+    }
+  }
+}
+```
+
+**Guidelines:**
+- Match the expected type (string, number, boolean, object)
+- Provide all required parameters
+- Ask user for clarification if parameter purpose is unclear
+- Optional parameters can be omitted
+
+### Step 3: Trigger Execution
+
+Once parameters are set (or if none are needed), execute the workflow:
+
+```json
+{
+  "action_name": "execute_workflow"
+}
+```
+
+### Step 4: Monitor Progress
+
+**What you'll see in context:**
+- Execution state: `executing`, `complete`, or `error`
+- Progress percentage
+- Step-by-step status (pending, running, completed, failed)
+- Step outputs (as they complete)
+
+**Keep user informed:**
+- Report when execution starts
+- Update on progress for long-running workflows
+- Notify when complete
+
+### Step 5: Report Results
+
+**On successful completion:**
+- Summarize what the workflow did
+- Highlight key outputs or results
+- If results include data, format it clearly for the user
+
+**On failure:**
+- Identify which step failed
+- Report the error message
+- Suggest next steps (see Troubleshooting below)
+
+### Troubleshooting Failed Executions
+
+**Error: Missing required parameter**
+- Go back to Step 2
+- Fill the missing parameter
+- Re-execute
+
+**Error: Invalid parameter type**
+- Check the expected type
+- Convert the value to the correct type
+- Re-execute
+
+**Error: Step X failed**
+- Check the step's error message in execution data
+- This usually means:
+  - Tool is unavailable
+  - Tool input was invalid
+  - External API/data source failed
+- Suggest: review the workflow definition or check monitoring logs
+
+**Error: Permission denied**
+- User lacks permission to execute this workflow
+- Cannot be fixed by the agent - inform the user
+
+### After Execution
+
+**Next actions you can offer:**
+- View detailed logs: Navigate to `/monitoring`
+- Re-run with different parameters
+- Edit the workflow if there's an error in the definition
+- Share the results
+
+### Common Pitfalls to Avoid
+
+1. **Don't execute without required parameters** - Check first
+2. **Don't provide wrong parameter types** - Match what the workflow expects
+3. **Don't ignore execution errors** - Always check the result
+4. **Don't lose track of long-running executions** - Keep monitoring
+5. **Don't forget to explain results** - Users need context, not just raw data

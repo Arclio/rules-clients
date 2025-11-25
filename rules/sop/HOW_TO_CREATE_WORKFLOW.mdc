@@ -1,0 +1,99 @@
+---
+description: "Standard Operating Procedure: Creating a workflow. Tactical steps for the agent to follow when creating a workflow on behalf of a user."
+globs: []
+alwaysApply: false
+---
+## SOP: Create Workflow
+
+**Context:** This rule is loaded when the user is on the workflow creation page or modal. The agent is already in the creation context.
+
+### Step 1: Understand What the User Wants
+
+Ask clarifying questions if needed:
+- What should the workflow do (high-level goal)?
+- What data sources or APIs are involved?
+- What is the expected output?
+
+### Step 2: Identify Required MCP Tools
+
+**Action:** Query the available MCP tools to see what's available.
+
+- Use MCP tool discovery (if available in context) to list available tools
+- Match user requirements to available tools
+- For each tool you plan to use, call it individually with test inputs to verify:
+  - What parameters it accepts
+  - What structure it returns
+  - Any quirks or edge cases
+
+**Why:** You cannot write a valid workflow without knowing the exact tool signatures and output structures.
+
+### Step 3: Draft the Workflow Content
+
+**Reference:** Load and follow `WORKFLOW_SYNTAX` and `WORKFLOW_PATTERNS` rules.
+
+**Required elements:**
+1. **Frontmatter** (YAML block at top):
+   - `title`: Short, descriptive name
+   - `description`: One-sentence summary
+   - `version`: "2.1"
+   - `autonomous`: true
+
+2. **Steps** (one or more):
+   - Each step must have: `## Step N: Title`
+   - Each step must specify either `**Tool:**` or `**Type:**`
+   - Define `**Inputs:**` for tool parameters
+   - Define `**Outputs:**` with variable name, type, and extraction path
+
+**Validation checklist:**
+- [ ] Frontmatter has all required fields
+- [ ] Every step is numbered sequentially
+- [ ] Every variable reference (`${...}`) points to a defined output
+- [ ] No scope violations (child step outputs accessed from parent)
+- [ ] Tool names match those verified in Step 2
+- [ ] Output extraction paths match verified tool responses
+
+### Step 4: Fill the Creation Form
+
+Use `ui_fill_state` to populate the form:
+
+```json
+{
+  "store_name": "workflow",
+  "state_path": "workflowCreationState",
+  "updates": {
+    "title": "Workflow Title",
+    "description": "Brief description",
+    "scenario": "data_processing",  // or other category
+    "content": "---\ntitle: ...\n..."  // Full .wf.md content
+  }
+}
+```
+
+**Field rules:**
+- `title`: Must not be empty
+- `scenario`: Pick appropriate category based on workflow type
+- `content`: Must be valid `.wf.md` (validated in Step 3)
+
+### Step 5: Verify Before Saving
+
+**Double-check:**
+- All fields are filled
+- Content passes validation
+- You've tested the tools you're using
+- Variable references are correct
+
+**Note:** The save button will activate once the form is valid. If it doesn't activate, there's a validation error.
+
+### Step 6: After Saving
+
+- Workflow will appear in the workflow gallery
+- Inform user of next steps: they can edit, execute, or share the workflow
+- If user wants to run it immediately, you can navigate to the execution page
+
+### Common Pitfalls to Avoid
+
+1. **Don't guess tool signatures** - Always verify before writing the workflow
+2. **Don't skip frontmatter** - It's required
+3. **Don't create dangling variable references** - Every `${stepN.var}` must exist
+4. **Don't use tools you haven't tested** - You need to know their output structure
+5. **Don't forget to validate** - Catch errors before submitting

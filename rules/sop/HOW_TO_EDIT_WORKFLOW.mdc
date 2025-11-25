@@ -1,0 +1,122 @@
+---
+description: "Standard Operating Procedure: Editing a workflow. Tactical steps for the agent to follow when modifying an existing workflow."
+globs: []
+alwaysApply: false
+---
+## SOP: Edit Workflow
+
+**Context:** This rule is loaded when the user is on the workflow edit page. The agent is already viewing/editing a specific workflow.
+
+### Step 1: Understand What Needs to Change
+
+Clarify with the user:
+- What aspect of the workflow needs modification (metadata, steps, logic)?
+- Are they adding, removing, or modifying steps?
+- Do they want to change workflow behavior or just fix an error?
+
+### Step 2: Review Current Workflow
+
+**Available in context:**
+- Current workflow content (`.wf.md` format)
+- Workflow metadata (title, description, scenario)
+- Current step definitions
+
+**Action:** Read the current workflow to understand its structure before making changes.
+
+### Step 3: Make the Requested Modification
+
+**For metadata changes (title, description, scenario):**
+
+Use `ui_fill_state` to update specific fields:
+
+```json
+{
+  "store_name": "workflow",
+  "state_path": "workflowEditState",
+  "updates": {
+    "title": "New Title"
+  }
+}
+```
+
+**Important:** Only include the fields you're changing. Other fields will be preserved.
+
+**For workflow content changes (steps, logic):**
+
+1. Get the current content from context
+2. Modify the specific section
+3. Submit the complete updated content:
+
+```json
+{
+  "store_name": "workflow",
+  "state_path": "workflowEditState",
+  "updates": {
+    "content": "---\ntitle: ...\n--- \n## Step 1: ...\n..."
+  }
+}
+```
+
+### Step 4: Validate the Changes
+
+**Before submitting, verify:**
+- [ ] If you modified steps, all variable references are still valid
+- [ ] If you added a step, it has required fields (`**Tool:**` or `**Type:**`)
+- [ ] If you removed a step, no later steps reference its outputs
+- [ ] If you changed a tool, you've verified the new tool exists and tested it
+- [ ] Frontmatter is still valid (if you touched it)
+
+**Reference:** Check against `WORKFLOW_SYNTAX` and `WORKFLOW_PATTERNS` if needed.
+
+### Step 5: After Saving
+
+- Changes are applied immediately
+- Inform user what you changed
+- If the user wants to test, you can navigate to the execution page
+
+### Common Editing Tasks
+
+**Task: Rename a workflow**
+```json
+{
+  "store_name": "workflow",
+  "state_path": "workflowEditState",
+  "updates": {
+    "title": "New Workflow Name"
+  }
+}
+```
+
+**Task: Change category**
+```json
+{
+  "store_name": "workflow",
+  "state_path": "workflowEditState",
+  "updates": {
+    "scenario": "reporting"
+  }
+}
+```
+
+**Task: Add a new step**
+1. Read current content
+2. Append new step with proper numbering
+3. Update content field with modified version
+
+**Task: Modify an existing step**
+1. Read current content
+2. Locate and modify the target step
+3. Update content field with modified version
+
+**Task: Fix a variable reference**
+1. Identify the broken reference
+2. Update it to point to the correct output
+3. Submit updated content
+
+### Common Pitfalls to Avoid
+
+1. **Don't clear other fields** - Only update what needs to change
+2. **Don't break variable chains** - If you remove a step, check what depends on it
+3. **Don't forget to test tools** - If you're adding a new tool, verify it works
+4. **Don't submit partial content** - When editing content, submit the full `.wf.md`
+5. **Don't skip validation** - Catch errors before saving
