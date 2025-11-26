@@ -74,26 +74,50 @@ Use `ui_fill_state` to populate the form:
 - `scenario`: Pick appropriate category based on workflow type
 - `content`: Must be valid `.wf.md` (validated in Step 3)
 
-### Step 5: Verify Before Saving
+### Step 5: **SAVE the Workflow** (CRITICAL STEP)
 
-**Double-check:**
-- All fields are filled
-- Content passes validation
-- You've tested the tools you're using
-- Variable references are correct
+**⚠️ IMPORTANT:** Filling the form does NOT create the workflow. You MUST click the save button.
 
-**Note:** The save button will activate once the form is valid. If it doesn't activate, there's a validation error.
+**Action Required:**
 
-### Step 6: After Saving
+1. **Check button state** in `page_data.buttons.create`:
+   - If `enabled: false` → Check `enabled_reason` to see what's missing (usually title)
+   - If `enabled: true` → Proceed to step 2
 
-- Workflow will appear in the workflow gallery
-- Inform user of next steps: they can edit, execute, or share the workflow
-- If user wants to run it immediately, you can navigate to the execution page
+2. **Click the save button:**
+   ```json
+   ui_trigger_click({"element_id": "create-workflow-submit-btn"})
+   ```
+
+3. **Wait for and READ the tool result:**
+   - **Success:** `{success: true}` → Workflow created! Continue to Step 6
+   - **Error:** `{success: false, errors: [...]}` → **READ the error messages**
+     - Common errors: Invalid syntax, missing required fields, tool name typos
+     - **FIX the workflow content** based on error message
+     - **Return to Step 4** to update the form with corrected content
+     - **Retry this step** (click save again)
+
+**DO NOT** tell the user "workflow created" until you receive `success: true` from the save button click.
+
+### Step 6: Confirm Success and Next Steps
+
+After receiving `success: true` from the save button:
+
+- Close the creation modal
+- Workflow now appears in the workflow gallery
+- You'll be navigated to the edit page automatically
+
+**Inform the user:**
+- Workflow was successfully created ✅
+- It's ready to edit or execute
+- Offer next steps: "Would you like me to run it now?"
 
 ### Common Pitfalls to Avoid
 
-1. **Don't guess tool signatures** - Always verify before writing the workflow
-2. **Don't skip frontmatter** - It's required
-3. **Don't create dangling variable references** - Every `${stepN.var}` must exist
-4. **Don't use tools you haven't tested** - You need to know their output structure
-5. **Don't forget to validate** - Catch errors before submitting
+1. **Don't skip the save step** - Filling the form ≠ Creating the workflow
+2. **Don't ignore error messages** - If save fails, READ the error and fix the issue
+3. **Don't guess tool signatures** - Always verify before writing the workflow
+4. **Don't skip frontmatter** - It's required
+5. **Don't create dangling variable references** - Every `${stepN.var}` must exist
+6. **Don't use tools you haven't tested** - You need to know their output structure
+7. **Don't assume success** - Wait for explicit confirmation from tool results
