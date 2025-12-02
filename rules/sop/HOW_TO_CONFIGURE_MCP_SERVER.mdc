@@ -1,0 +1,248 @@
+---
+description: "Standard Operating Procedure: Configuring an MCP Server with credentials. Tactical steps for the agent to follow when helping users add or edit a configuration for an existing server."
+globs: []
+alwaysApply: false
+---
+
+## SOP: Configure MCP Server
+
+**Context:** User wants to add their credentials/settings to an existing MCP server template so they can use it.
+
+**Reference:** Load `MCP_CONCEPTS` for terminology and data model understanding.
+
+### Step 1: Open the Configure Modal
+
+**Precondition:** An MCP server template exists and is visible on the `/features` page.
+
+**Action:** Click "Configure" on the desired server card.
+
+```json
+ui_trigger_click({"element_id": "configure-server-{server_id}"})
+```
+
+The modal will open to the `configs` tab, showing existing configurations (if any).
+
+### Step 2: Understand the Modal Tab Structure
+
+The Configure modal has three tabs:
+1. **configs** - List of saved configurations
+2. **configure** - Form to create/edit a configuration
+3. **settings** - Edit server template (super_admin only)
+
+**Navigation between tabs:**
+- Click `configs-tab`, `configure-tab`, or `settings-tab`
+- Use `ui_trigger_click({"element_id": "{tab-name}-tab"})`
+
+**Important:** Only the active tab's content is available in context. Switch tabs to access different data.
+
+### Step 3: Review Existing Configurations (configs tab)
+
+On the `configs` tab, check what configurations already exist:
+
+**Context will show:**
+- List of saved configurations with names and status
+- Which configuration is currently active (if any)
+- Available actions per configuration
+
+**Available actions:**
+- `Edit` - Modify an existing configuration
+- `Activate` - Make this configuration active
+- `Delete` - Remove the configuration
+
+### Step 4: Create New Configuration
+
+**Action:** Click "Create New Configuration"
+
+```json
+ui_trigger_click({"element_id": "create-new-config-btn"})
+```
+
+This switches to the `configure` tab with an empty form.
+
+### Step 5: Fill Configuration Form
+
+The form fields depend on the server's `ui_schema`. Check context for available fields.
+
+**Standard workflow:**
+
+1. **Set configuration name:**
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "configForm": {
+      "config_name": "My GitHub Config"
+    }
+  }
+}
+```
+
+2. **Fill variable values:**
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "configForm": {
+      "config_name": "My GitHub Config",
+      "variables": {
+        "api_key": "ghp_xxxxxxxxxxxx",
+        "repo_name": "my-repository",
+        "branch": "main"
+      }
+    }
+  }
+}
+```
+
+**Field Types in Form:**
+- `text` inputs - Enter string values directly
+- `password` inputs - Enter secret values (will be encrypted)
+- `checkbox` groups - Select multiple options as array
+- `textarea` - Multi-line text
+
+### Step 6: Handle OAuth-Enabled Servers
+
+For OAuth servers (Google Workspace, Discord, etc.), the flow is different:
+
+**Check if OAuth is enabled:**
+- Context will show `oauth_enabled: true` for the server
+- The form will have a "Connect with {Service}" button instead of credential fields
+
+**OAuth Connection Flow:**
+
+1. **Fill any non-OAuth fields first:**
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "configForm": {
+      "config_name": "My Google Workspace",
+      "variables": {
+        "enabled_capabilities": ["gmail", "calendar", "drive"]
+      }
+    }
+  }
+}
+```
+
+2. **Initiate OAuth:**
+```json
+ui_trigger_click({"element_id": "connect-oauth-btn"})
+```
+
+3. **User will be redirected to OAuth provider**
+   - They must authorize access
+   - After authorization, they return to `/features?oauth_status=success`
+
+4. **After OAuth completes:**
+   - Configuration is automatically saved
+   - The server can now be enabled
+
+**Important:** You cannot save an OAuth configuration without completing the OAuth flow.
+
+### Step 7: Save Configuration
+
+**Action:** Click "Save Configuration"
+
+```json
+ui_trigger_click({"element_id": "save-config-btn"})
+```
+
+**Wait for and READ the tool result:**
+- `success: true` → Configuration saved!
+- `success: false` → Read error, fix the issue, retry.
+
+**Common Errors:**
+- Missing required fields
+- Invalid values (format, length)
+- OAuth not completed for OAuth-enabled servers
+
+### Step 8: Activate Configuration (if needed)
+
+After saving, the configuration may not be active. Check context for `is_active` status.
+
+**To activate a configuration:**
+```json
+ui_trigger_click({"element_id": "activate-config-{config_id}"})
+```
+
+**Note:** Only one configuration per server can be active at a time. Activating one deactivates others.
+
+### Step 9: Enable the Server
+
+Return to the server list and enable the server:
+
+**Close the modal first:**
+```json
+ui_trigger_click({"element_id": "close-modal-btn"})
+```
+
+**Toggle the server on:**
+```json
+ui_trigger_click({"element_id": "toggle-server-{server_id}"})
+```
+
+**Verification:**
+- The server card should show "Active" status
+- Tools from this server are now available in workflows
+
+### Editing an Existing Configuration
+
+To modify a saved configuration:
+
+1. **Open Configure modal** (Step 1)
+2. **On configs tab, click Edit:**
+```json
+ui_trigger_click({"element_id": "edit-config-{config_id}"})
+```
+
+3. This opens the `configure` tab with existing values populated
+4. Modify values using `ui_fill_state`
+5. Save changes
+
+### Deleting a Configuration
+
+**Warning:** This is destructive.
+
+1. On the `configs` tab:
+```json
+ui_trigger_click({"element_id": "delete-config-{config_id}"})
+```
+
+2. Confirm the deletion when prompted
+
+**Note:** If deleting the only active configuration, the server will be disabled.
+
+### Multiple Configurations Use Cases
+
+Users may have multiple configurations for the same server:
+- **Different environments** (dev, staging, prod)
+- **Different accounts** (personal, work)
+- **Different scopes/permissions**
+
+Only one can be active at a time. Switch by activating the desired configuration.
+
+### Common Pitfalls
+
+1. **Don't skip OAuth** - OAuth servers require completing the flow
+2. **Check field types** - Arrays need array values, not comma-separated strings
+3. **Secret values are one-way** - After saving, secrets cannot be viewed
+4. **Activate before enabling** - Server toggle requires an active configuration
+5. **One active config per server** - Activating one deactivates others
+
+### Troubleshooting
+
+**Server won't enable:**
+- Check if any configuration exists
+- Check if a configuration is active
+- For OAuth servers, verify OAuth is connected
+
+**OAuth keeps failing:**
+- Verify admin has configured client_id and client_secret
+- Check OAuth scopes are correct
+- Ensure redirect URI is properly configured
+
+**Configuration save fails:**
+- Review error message in tool result
+- Check all required fields are filled
+- Validate value formats

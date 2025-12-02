@@ -1,0 +1,124 @@
+---
+description: "Standard Operating Procedure: Viewing MCP server tools and their parameters. Tactical steps for the agent to follow when helping users explore available tools."
+globs: []
+alwaysApply: false
+---
+
+## SOP: View MCP Server Tools
+
+**Context:** User wants to see what tools an MCP server provides before using them in workflows.
+
+**Note:** The Tools modal is read-only. Tool availability is controlled at the server level (enable/disable the server), not at individual tool level.
+
+### Step 1: Open Tools Modal
+
+**Precondition:** An MCP server exists on the `/features` page.
+
+**Action:** Click "View Tools" on the server card.
+
+```json
+ui_trigger_click({"element_id": "view-tools-server-{server_id}"})
+```
+
+### Step 2: Review Tool List
+
+The modal displays all available tools for the server with:
+- Tool name
+- Tool description
+- Parameter count
+
+**Context will include:**
+```json
+{
+  "tools": [
+    {
+      "name": "tool_name",
+      "description": "What the tool does",
+      "parameter_count": 3
+    }
+  ],
+  "tool_count": 5,
+  "is_loading": false,
+  "error": null
+}
+```
+
+### Step 3: Expand Tool Parameters
+
+To see a tool's parameters, click to expand:
+
+```json
+ui_trigger_click({"element_id": "expand-tool-{tool_index}"})
+```
+
+**Expanded tool shows:**
+- Parameter name
+- Parameter type (string, number, boolean, array, object)
+- Whether parameter is required
+- Parameter description
+
+### Step 4: Understand Tool Signatures
+
+When using tools in workflows, you need:
+
+1. **Exact tool name** - Use the `name` field exactly as shown
+2. **Required parameters** - All required params must be provided
+3. **Parameter types** - Values must match expected types
+
+**Example workflow step using an MCP tool:**
+```markdown
+**Tool:** `google_workspace_gmail_send_email`
+**Inputs:**
+- to: "${recipient_email}"
+- subject: "Meeting Reminder"
+- body: "Your meeting starts in 10 minutes."
+```
+
+### Step 5: Refresh Tools (if needed)
+
+If the server was recently configured or updated:
+
+```json
+ui_trigger_click({"element_id": "refresh-tools-btn"})
+```
+
+This fetches the latest tool list from the running MCP server.
+
+### Step 6: Close Modal
+
+```json
+ui_trigger_click({"element_id": "close-tools-modal-btn"})
+```
+
+### Common Scenarios
+
+#### Tools Not Loading
+If tools fail to load:
+- **Server not enabled** - Enable the server first
+- **No configuration** - Add credentials via Configure modal
+- **Server error** - Check server status, may need restart
+
+#### Using Tools in Workflows
+
+Once you know the available tools:
+1. Reference the tool by exact name in workflow steps
+2. Provide all required parameters
+3. Handle outputs appropriately
+
+**Reference:** See `WORKFLOW_SYNTAX` and `WORKFLOW_TOOLING` rules for workflow step syntax.
+
+### Tool Information Reference
+
+| Field | Description |
+|-------|-------------|
+| name | Exact identifier to use in workflows |
+| description | What the tool does, often includes usage hints |
+| inputSchema.properties | Available parameters |
+| inputSchema.required | Parameters that must be provided |
+
+### Note on Tool Availability
+
+- Tools are provided by the MCP server, not created in Arclio
+- Tool list depends on server configuration and capabilities
+- Some servers expose different tools based on OAuth scopes
+- Server must be enabled and running to list tools

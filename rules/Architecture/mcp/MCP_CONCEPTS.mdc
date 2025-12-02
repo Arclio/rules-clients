@@ -1,0 +1,146 @@
+---
+description: "Defines the core concepts and terminology for MCP (Model Context Protocol) server connections. Reference this document to understand the data model and key terms."
+globs: []
+alwaysApply: false
+---
+
+## MCP Connections: Core Concepts
+
+This document defines the key terms and concepts for the MCP Connections page (`/features`).
+
+### Terminology
+
+| Term | Definition |
+|------|------------|
+| **MCP Server** | A server template that defines how to connect to an external service (e.g., Google Workspace, GitHub). Contains command configuration and variable schemas. |
+| **Server Template** | The configuration blueprint for an MCP server, including `config_template`, `variable_schema`, and `ui_schema`. |
+| **User Configuration** | A saved set of credentials/variables that instantiates a server template for a specific user. One server can have multiple configurations. |
+| **Organization Configuration** | A shared configuration that applies to all users in an organization. |
+| **Active Server** | A server that is currently enabled and running in the user's MCP hub. |
+| **OAuth-enabled Server** | A server that uses OAuth for authentication instead of manual credential entry. |
+
+### Data Model
+
+```
+MCP Server (Template)
+├── id: number
+├── name: string (machine-readable, e.g., "google_workspace")
+├── display_name: string (user-friendly, e.g., "Google Workspace")
+├── description: string
+├── config_template: object (mcpServers configuration)
+├── variable_schema: object (defines variables with types and secrets)
+├── ui_schema: object (defines form fields)
+├── oauth_enabled: boolean
+├── oauth_handler_type: "google" | "discord" | null
+└── oauth_scopes_defined_by_admin: string | null
+
+User Configuration (Instance)
+├── id: number
+├── server_id: number (FK to MCP Server)
+├── config_name: string
+├── variables: Record<string, any> (filled values)
+├── is_active: boolean
+├── is_organization_config: boolean
+└── created_at: timestamp
+```
+
+### Configuration Template Structure
+
+The `config_template` defines how the MCP server runs:
+
+```json
+{
+  "mcpServers": {
+    "server_key": {
+      "command": "uvx | npx | docker",
+      "args": ["array", "of", "arguments"],
+      "env": {
+        "ENV_VAR_NAME": "{{placeholder_variable}}"
+      }
+    }
+  }
+}
+```
+
+### Variable Schema Structure
+
+The `variable_schema` defines what variables the user must provide:
+
+```json
+{
+  "required": ["list_of_required_keys"],
+  "properties": {
+    "variable_key": {
+      "type": "string | array | boolean | integer",
+      "title": "Display Label",
+      "description": "Help text",
+      "secret": true | false,
+      "default": "optional default"
+    }
+  }
+}
+```
+
+**Important:** Variables marked as `secret: true` are stored encrypted and never exposed in logs or UI after saving.
+
+### UI Schema Structure
+
+The `ui_schema` defines how the configuration form is rendered:
+
+```json
+{
+  "sections": [
+    {
+      "title": "Section Header",
+      "type": "text | textarea | password | checkbox | instructions",
+      "field": "variable_key_from_variable_schema",
+      "options": [{"label": "...", "value": "..."}]
+    }
+  ]
+}
+```
+
+### OAuth Configuration
+
+OAuth-enabled servers require special handling:
+
+1. **Admin credentials** (`client_id`, `client_secret`) - Configured by organization admin
+2. **User tokens** (`refresh_token`) - Obtained via OAuth flow, not manually entered
+
+**OAuth flow:**
+1. User clicks "Connect with {Service}" button
+2. Browser redirects to OAuth provider
+3. User authorizes access
+4. Redirect back to `/features?oauth_status=success`
+5. Backend stores tokens, configuration is complete
+
+### Server Lifecycle
+
+```
+Add Server Template → Configure Variables →
+└─► User Creates Configuration → Fill Variables → Save →
+    └─► Toggle Server On/Off (requires active config)
+```
+
+### Key Business Rules
+
+1. **A server must have at least one configuration before it can be enabled**
+2. **Only one configuration per server can be active at a time** (for non-OAuth)
+3. **OAuth servers require completing the OAuth flow before activation**
+4. **Server templates can only be edited by super_admin users**
+5. **Deleting a server template requires all user configurations to be deleted first**
+
+### Modal Tab Reference
+
+**Add Server Modal (mode='add'):**
+- `add` tab: Enter server template details
+- `variables` tab: Configure variable types (secret vs plain)
+
+**Configure Modal (mode='configure'):**
+- `configs` tab: View/manage saved configurations
+- `configure` tab: Create or edit a configuration
+- `settings` tab: Edit server template (super_admin only)
+
+**Tools Modal:**
+- Displays available MCP tools for the server
+- Read-only, shows tool names, descriptions, and parameters

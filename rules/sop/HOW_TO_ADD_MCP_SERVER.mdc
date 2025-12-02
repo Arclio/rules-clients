@@ -1,0 +1,411 @@
+---
+description: "Standard Operating Procedure: Adding an MCP Server manually. Tactical steps for the agent to follow when helping users add a new MCP server template."
+globs: []
+alwaysApply: false
+---
+
+## SOP: Add MCP Server Manually
+
+**Context:** User wants to add an MCP server connection (e.g., "Add an MCP server for Salesforce").
+
+**Reference:** Load `MCP_CONCEPTS` for terminology and data model understanding.
+
+---
+
+### Step 1: Discover Available MCP Servers
+
+**MCP Tool Required:** `brave_search` (or equivalent web search tool)
+
+**Precondition:** User has expressed interest in connecting to a specific service/platform.
+
+**Action:** Search for available MCP servers for the requested service.
+
+**Search Strategy:**
+1. Primary: `"[SERVICE_NAME] MCP server" site:github.com`
+2. Registries: `"[SERVICE_NAME]" site:mcpservers.org OR site:github.com/modelcontextprotocol`
+3. Awesome lists: `"[SERVICE_NAME]" MCP server awesome list`
+
+**Key Sources to Check:**
+- GitHub MCP Registry (official): `github.com/modelcontextprotocol/servers`
+- Community awesome lists: Multiple curated lists on GitHub
+- MCPServers.org: Searchable registry
+- GitHub Topics: `github.com/topics/mcp-server`
+
+**Present Results Concisely:**
+
+Format your response as a **recommendation with alternatives**:
+
+```
+I found [N] MCP servers for [SERVICE]. Here's my recommendation:
+
+**🏆 Recommended: [server-name]**
+- ⭐ [stars] stars | 📅 Last updated: [date]
+- 🔧 Install: `uvx --from [package] [entrypoint]`
+- ✅ Why: [1-2 sentence reason - most active, best maintained, most features]
+- 🔐 Auth: [API Key / OAuth / Token]
+
+**Alternatives:**
+1. **[server-name-2]** (⭐ [stars]) - [Brief differentiator]
+2. **[server-name-3]** (⭐ [stars]) - [Brief differentiator]
+
+Would you like me to proceed with the recommended server, or would you prefer one of the alternatives?
+```
+
+**Decision Guidance:**
+- **Lead with the best option** - Recommend based on: star count, recent activity, feature completeness
+- **Keep alternatives brief** - Just enough for informed decision
+- **Wait for user confirmation** before proceeding
+
+---
+
+### Step 2: Fetch Complete Documentation
+
+**MCP Tool Required:** `brave_search` (for GitHub README fetching) or `fetch` tool if available
+
+**Precondition:** User has selected their preferred MCP server from discovery results.
+
+**Action:** Retrieve the complete README and documentation from the selected GitHub repository.
+
+**Search/Fetch Strategy:**
+1. Try raw content: `site:raw.githubusercontent.com "[REPO_OWNER]/[REPO_NAME]/main/README.md"`
+2. Fallback: `"[REPO_OWNER]/[REPO_NAME]" README installation configuration`
+
+**Extract Key Information:**
+- Installation command (uvx/npx/docker)
+- Required environment variables
+- Authentication setup steps
+- Configuration examples
+- Available tools/capabilities
+- Prerequisites or dependencies
+
+**Validation Before Proceeding:**
+- [ ] Installation method confirmed (uvx/npx/docker)
+- [ ] All required environment variables identified
+- [ ] Authentication type known (API key, OAuth, token)
+- [ ] Have enough context to build config template
+
+**If documentation is insufficient:**
+- Check for `pyproject.toml` or `package.json` for entry points
+- Look for example configurations in the repo
+- Ask user for any missing details
+
+**Inform the user:**
+```
+I've reviewed the [server-name] documentation. Here's what I found:
+
+📦 **Installation:** `[command]`
+🔐 **Authentication:** [type] required
+🔧 **Environment Variables:**
+  - `VAR_NAME` - [description]
+  - `VAR_NAME_2` - [description] (optional)
+
+Ready to proceed with adding this server. Should I continue?
+```
+
+---
+
+### Step 3: Open the Add Server Modal
+
+**Precondition:** User is on `/features` with the "Custom MCPs" tab active.
+
+**Action:** Click the "Add Manually" button.
+
+```json
+ui_trigger_click({"element_id": "add-mcp-manually-btn"})
+```
+
+The modal will open to the `add` tab.
+
+---
+
+### Step 4: Create the Configuration Template
+
+Using the documentation fetched in Step 2, build the `config_template`:
+
+```json
+{
+  "mcpServers": {
+    "<server_key>": {
+      "command": "uvx | npx | docker",
+      "args": ["..."],
+      "env": {
+        "ENV_VAR_NAME": "{{placeholder}}"
+      }
+    }
+  }
+}
+```
+
+**Command Selection Priority:**
+
+1. **uvx (Python packages)** - Preferred for Python MCP servers
+   - Use when: README mentions `pip install <package-name>`
+   - Pattern: `"command": "uvx", "args": ["--from", "<package>", "<entrypoint>"]`
+
+2. **npx (Node packages)** - For JavaScript/TypeScript servers
+   - Use when: README mentions `npm install` or package.json
+   - Pattern: `"command": "npx", "args": ["@scope/package-name"]`
+
+3. **docker** - For containerized servers
+   - Use when: Docker is explicitly required
+   - Pattern: `"command": "docker", "args": ["run", "<options>", "<image>"]`
+
+**Environment Variable Placeholders:**
+- Use `{{placeholder_name}}` syntax for user-configurable values
+- Placeholder names MUST be lowercase_snake_case
+- Actual env var names use UPPERCASE_SNAKE_CASE
+
+---
+
+### Step 5: Create the Variable Schema
+
+The `variable_schema` defines what the user must provide:
+
+```json
+{
+  "required": ["api_key"],
+  "properties": {
+    "api_key": {
+      "type": "string",
+      "title": "API Key",
+      "description": "Your service API key",
+      "secret": true
+    },
+    "repo_name": {
+      "type": "string",
+      "title": "Repository",
+      "description": "Repository to work with",
+      "secret": false,
+      "default": "main"
+    }
+  }
+}
+```
+
+**Secret Classification Rules:**
+- `secret: true` for: API keys, tokens, passwords, OAuth secrets
+- `secret: false` for: paths, names, URLs, feature flags, port numbers
+
+**Supported Types:**
+- `string` - Single text value
+- `array` - Multiple values (requires `items: {"type": "string"}`)
+- `boolean` - True/false toggle
+- `integer` / `number` - Numeric values
+
+---
+
+### Step 6: Create the UI Schema
+
+The `ui_schema` defines how the form looks:
+
+```json
+{
+  "sections": [
+    {
+      "title": "API Configuration",
+      "type": "password",
+      "field": "api_key"
+    },
+    {
+      "title": "Repository",
+      "type": "text",
+      "field": "repo_name"
+    },
+    {
+      "title": "Features",
+      "type": "checkbox",
+      "field": "enabled_features",
+      "options": [
+        {"label": "Feature A", "value": "feature_a"},
+        {"label": "Feature B", "value": "feature_b"}
+      ]
+    }
+  ]
+}
+```
+
+**Field Types:**
+- `text` - Single line input
+- `textarea` - Multi-line input
+- `password` - Masked input (for secrets)
+- `checkbox` - Multi-select (requires `options` array)
+- `instructions` - Display-only help text
+
+**Critical Rule:** The `field` value MUST exactly match a key in `variable_schema.properties`.
+
+---
+
+### Step 7: Handle OAuth-Enabled Servers
+
+If the service uses OAuth (Google, Discord), additional configuration is required:
+
+**Detect OAuth Need:**
+- Google services (Drive, Gmail, Calendar, Sheets, Docs, Slides)
+- Discord integrations
+
+**OAuth Configuration:**
+
+```json
+{
+  "oauth_enabled": true,
+  "oauth_handler_type": "google",
+  "oauth_scopes_defined_by_admin": "https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify"
+}
+```
+
+**Add OAuth credentials to variable_schema:**
+```json
+{
+  "gsuite_client_id": {"type": "string", "title": "Client ID", "secret": false},
+  "gsuite_client_secret": {"type": "string", "title": "Client Secret", "secret": true},
+  "gsuite_refresh_token": {"type": "string", "title": "Refresh Token", "secret": true}
+}
+```
+
+**Add UI sections for admin credentials only (NOT for refresh_token):**
+```json
+{
+  "sections": [
+    {"title": "Client ID", "type": "text", "field": "gsuite_client_id"},
+    {"title": "Client Secret", "type": "password", "field": "gsuite_client_secret"}
+  ]
+}
+```
+
+---
+
+### Step 8: Fill the Add Server Form
+
+Use `ui_fill_state` to populate all fields:
+
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "addServerForm": {
+      "name": "my_service",
+      "display_name": "My Service",
+      "description": "Connect to My Service API",
+      "config_template_json": "{\"mcpServers\": {...}}",
+      "ui_schema_json": "{\"sections\": [...]}",
+      "oauth_enabled": false
+    }
+  }
+}
+```
+
+**Field Validation:**
+- `name`: Required, lowercase_snake_case, no spaces
+- `display_name`: Required, user-friendly name
+- `description`: Brief description of what the server does
+- `config_template_json`: Valid JSON string
+- `ui_schema_json`: Valid JSON string (can be empty `{}`)
+
+---
+
+### Step 9: Proceed to Variables Tab
+
+**Action:** Click "Proceed to Configure Variables"
+
+```json
+ui_trigger_click({"element_id": "proceed-to-variables-btn"})
+```
+
+The system will parse `config_template_json` and detect all `{{placeholder}}` variables.
+
+---
+
+### Step 10: Configure Variable Types
+
+On the `variables` tab, each detected variable needs a type assignment.
+
+**Check context for detected variables:**
+- Review `detectedVariables` in the current context
+- Verify secret classification is correct
+
+If adjustments are needed, use `ui_fill_state`:
+
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "detectedVariables": {
+      "api_key": {"secret": true, "description": "API authentication key"},
+      "base_url": {"secret": false, "description": "Service endpoint URL"}
+    }
+  }
+}
+```
+
+---
+
+### Step 11: Save the Server Template
+
+**Action:** Click "Add Server"
+
+```json
+ui_trigger_click({"element_id": "add-server-submit-btn"})
+```
+
+**Wait for and READ the tool result:**
+- `success: true` → Server template created! Proceed to next steps.
+- `success: false` → Read error message, fix the issue, retry.
+
+**Common Errors:**
+- Invalid JSON syntax in config_template or ui_schema
+- Missing required fields (name, display_name)
+- Duplicate server name
+
+---
+
+### Step 12: Confirm Success and Next Steps
+
+After successful creation:
+
+1. The modal will close
+2. The new server appears in the grid
+3. **The server is NOT yet enabled** (needs configuration first)
+
+**Inform the user:**
+```
+✅ Server template "[display_name]" created successfully!
+
+**Next steps:**
+1. Configure the server with your credentials
+2. Enable the server to start using it
+
+Would you like me to help you configure it now?
+```
+
+**To proceed to configuration:**
+```json
+ui_trigger_click({"element_id": "configure-server-{server_id}"})
+```
+
+---
+
+### Common Pitfalls
+
+1. **Don't skip discovery** - Always search for existing MCP servers first
+2. **Don't skip documentation** - README contains critical configuration details
+3. **Don't skip the variables tab** - Required before saving
+4. **JSON must be valid** - Use proper escaping for nested JSON strings
+5. **Match field names exactly** - `ui_schema.field` must match `variable_schema.properties` keys
+6. **Mark secrets correctly** - Tokens and API keys should always be secrets
+7. **OAuth scopes are comma-separated, NO spaces** - `scope1,scope2,scope3`
+8. **The server needs configuration after creation** - Template alone doesn't enable it
+
+---
+
+### Validation Checklist
+
+Before saving, verify:
+- [ ] Searched for existing MCP servers (Step 1)
+- [ ] Fetched and reviewed documentation (Step 2)
+- [ ] Config template has valid `mcpServers` structure
+- [ ] All placeholder names use lowercase_snake_case
+- [ ] Variable schema has `properties` and `required` fields
+- [ ] All array types include `items` specification
+- [ ] UI schema `field` values match variable_schema keys
+- [ ] Secrets are marked as `secret: true`
+- [ ] OAuth settings are complete if oauth_enabled

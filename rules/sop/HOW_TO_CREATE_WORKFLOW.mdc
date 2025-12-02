@@ -19,6 +19,7 @@ Ask clarifying questions if needed:
 **Action:** Query the available MCP tools to see what's available.
 
 - Use MCP tool discovery (if available in context) to list available tools
+  - **Note:** When querying tools for a specific server, ALWAYS use `snake_case` (e.g., `google_workspace`, not "Google Workspace").
 - Match user requirements to available tools
 - For each tool you plan to use, call it individually with test inputs to verify:
   - What parameters it accepts
@@ -105,12 +106,12 @@ After receiving `success: true` from the save button:
 
 - Close the creation modal
 - Workflow now appears in the workflow gallery
-- You'll be navigated to the edit page automatically
+- **You will remain on the workflow list page** (No auto-redirect)
 
 **Inform the user:**
 - Workflow was successfully created ✅
-- It's ready to edit or execute
-- Offer next steps: "Would you like me to run it now?"
+- It is now visible in the list
+- Ask if they want to **Run** it or **Edit** it now
 
 ### Common Pitfalls to Avoid
 

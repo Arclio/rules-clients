@@ -1,0 +1,217 @@
+---
+description: "Standard Operating Procedure: Editing an existing MCP Server template settings. Tactical steps for the agent to follow when modifying server templates (super_admin only)."
+globs: []
+alwaysApply: false
+---
+
+## SOP: Edit MCP Server Template Settings
+
+**Context:** User wants to modify an existing MCP server template's settings (display name, description, config template, UI schema, or OAuth settings).
+
+**Important:** The `settings` tab is only accessible to users with `super_admin` role.
+
+**Reference:** Load `MCP_CONCEPTS` and `HOW_TO_ADD_MCP_SERVER` for configuration structure.
+
+### Step 1: Open the Configure Modal
+
+**Action:** Click "Configure" on the server card you want to edit.
+
+```json
+ui_trigger_click({"element_id": "configure-server-{server_id}"})
+```
+
+### Step 2: Navigate to Settings Tab
+
+**Action:** Click the "Settings" tab.
+
+```json
+ui_trigger_click({"element_id": "settings-tab"})
+```
+
+**Access Control:**
+- If user lacks `super_admin` role, they will be redirected back to `configs` tab
+- Check context for `user_role` or `can_edit_server_settings`
+
+### Step 3: Understand Available Fields
+
+The Settings tab allows editing:
+
+| Field | Description | Impact |
+|-------|-------------|--------|
+| Display Name | User-friendly server name | UI only |
+| Description | Server description | UI only |
+| Config Template | MCP server configuration | Affects how server runs |
+| UI Schema | Form field definitions | Affects configuration UI |
+| OAuth Enabled | Toggle OAuth requirement | Major - affects auth flow |
+| OAuth Handler | google, discord, or null | Changes OAuth provider |
+| OAuth Scopes | Comma-separated scope list | Changes permissions requested |
+
+### Step 4: Edit Server Settings
+
+Use `ui_fill_state` to modify settings:
+
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "serverSettingsForm": {
+      "display_name": "Updated Server Name",
+      "description": "New description for the server"
+    }
+  }
+}
+```
+
+**For config template changes:**
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "serverSettingsForm": {
+      "config_template_json": "{\"mcpServers\": {\"updated_key\": {...}}}"
+    }
+  }
+}
+```
+
+**For UI schema changes:**
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "serverSettingsForm": {
+      "ui_schema_json": "{\"sections\": [{\"title\": \"New Field\", \"type\": \"text\", \"field\": \"new_field\"}]}"
+    }
+  }
+}
+```
+
+**For OAuth settings:**
+```json
+{
+  "store_id": "mcp",
+  "updates": {
+    "serverSettingsForm": {
+      "oauth_enabled": true,
+      "oauth_handler_type": "google",
+      "oauth_scopes_defined_by_admin": "https://www.googleapis.com/auth/drive"
+    }
+  }
+}
+```
+
+### Step 5: Save Changes
+
+**Action:** Click "Update Server"
+
+```json
+ui_trigger_click({"element_id": "update-server-btn"})
+```
+
+**Wait for and READ the tool result:**
+- `success: true` → Server template updated
+- `success: false` → Read error, fix the issue, retry
+
+### Step 6: Return to Configs Tab
+
+After saving, navigate back:
+
+```json
+ui_trigger_click({"element_id": "configs-tab"})
+```
+
+Or close the modal:
+```json
+ui_trigger_click({"element_id": "close-modal-btn"})
+```
+
+### Deleting a Server Template
+
+**Warning:** This is highly destructive and cannot be undone.
+
+**Prerequisites:**
+- User must have `super_admin` role
+- All user configurations for this server must be deleted first
+
+**On the Settings tab:**
+```json
+ui_trigger_click({"element_id": "delete-server-btn"})
+```
+
+**Confirmation required:** User will be prompted to confirm.
+
+**If deletion fails:**
+- Check error message
+- Usually means configurations still exist
+- Delete all configurations first, then retry
+
+### Important Considerations
+
+#### Config Template Changes
+
+**Impact:** Modifying `config_template` does NOT automatically update existing user configurations.
+
+- Existing configs retain their saved values
+- New placeholder variables won't have values in old configs
+- Users may need to reconfigure after template changes
+
+**Recommendation:** If adding new required variables:
+1. Update `variable_schema` to include new variables
+2. Update `ui_schema` to add form fields
+3. Notify users to update their configurations
+
+#### OAuth Changes
+
+**Impact:** Changing OAuth settings affects all users.
+
+- Toggling `oauth_enabled` to `true` requires users to complete OAuth
+- Changing `oauth_handler_type` invalidates existing OAuth connections
+- Modifying `oauth_scopes` may require re-authorization
+
+**Recommendation:**
+- Plan OAuth changes carefully
+- Notify users before making changes
+- Be prepared for users to need to reconnect
+
+#### UI Schema Changes
+
+**Impact:** Affects how the configuration form is displayed.
+
+- Adding new sections allows configuration of new variables
+- Removing sections hides fields but doesn't delete data
+- Changing field types may cause display issues
+
+**Best Practice:**
+1. Update `variable_schema` first (add new property)
+2. Then update `ui_schema` (add corresponding form field)
+3. Maintain field name consistency
+
+### Common Pitfalls
+
+1. **JSON validation** - Config template and UI schema must be valid JSON
+2. **Placeholder consistency** - New placeholders need matching variable_schema entries
+3. **OAuth scope format** - Comma-separated, NO spaces
+4. **Existing configs** - Changes don't retroactively apply to saved configurations
+5. **Delete requires empty configs** - Remove all user configurations first
+6. **Super admin only** - Regular users cannot access settings tab
+
+### Rollback Strategy
+
+If a change causes issues:
+
+1. Keep note of original values before making changes
+2. Use same edit flow to restore previous values
+3. For major issues, may need to:
+   - Delete affected user configurations
+   - Recreate server template from scratch
+   - Have users reconfigure
+
+### Validation Checklist
+
+Before saving server template changes:
+- [ ] Config template JSON is valid
+- [ ] UI schema JSON is valid
+- [ ] All placeholder variables have corresponding variable_schema entries
+- [ ] All UI schema fields have corresponding variable_schema properties
+- [ ] OAuth settings are complete if oauth_enabled
+- [ ] Impact on existing configurations is understood
