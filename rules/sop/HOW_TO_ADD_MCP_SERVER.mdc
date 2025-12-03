@@ -300,7 +300,7 @@ Secret classification:
 {
   "name": "ui_trigger_click",
   "parameters": {
-    "element_id": "proceed-to-variables-btn"
+    "element_id": "detect-variables-btn"
   }
 }
 ```
@@ -404,7 +404,7 @@ ui_fill_state({
 
 **Step 4: Proceed**
 ```json
-ui_trigger_click({"element_id": "proceed-to-variables-btn"})
+ui_trigger_click({"element_id": "detect-variables-btn"})
 ```
 
 **Step 5: Save**
