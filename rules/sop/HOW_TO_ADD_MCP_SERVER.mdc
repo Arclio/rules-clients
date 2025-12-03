@@ -8,73 +8,95 @@ alwaysApply: false
 
 **Context:** User wants to add an MCP server connection (e.g., "Add Salesforce MCP server").
 
-**Goal:** Search, present options, let user choose, then fetch docs and create the server.
+**Goal:** Search multiple sources, present options as a table, let user choose, then fetch docs and create the server.
 
 ---
 
-### Step 1: Search for MCP Servers
+### Step 1: Comprehensive Search for MCP Servers
+
+**Sources to Search (use your judgment for which are most relevant):**
+1. **GitHub** - Primary source for code repositories
+2. **MCP Registry** (`mcpservers.org` or official MCP registry)
+3. **npm** - For Node.js packages
+4. **PyPI** - For Python packages
+5. **Community lists** - awesome-mcp-servers and similar curated lists
 
 **Tool:** `brave-search__brave_web_search`
 
-**Search Query:**
-```
-"[SERVICE_NAME] MCP server" site:github.com
-```
+**Search Strategy:**
+Execute 1-2 searches across the most relevant sources:
 
-**Example:**
 ```json
 {
   "name": "brave-search__brave_web_search",
   "parameters": {
-    "query": "\"Salesforce MCP server\" site:github.com"
+    "query": "\"[SERVICE_NAME] MCP server\" site:github.com OR site:mcpservers.org OR site:npmjs.com"
   }
 }
 ```
 
-**Present Results to User (Fast & Concise):**
+**Extract key information for each server:**
+- Repository/package name
+- Stars/downloads (popularity metric)
+- Last updated date
+- Installation method (uvx, npx, docker)
+- Authentication type (API key, OAuth, credentials)
 
-```
-🔍 Found [N] MCP servers for Salesforce:
+**Present Results as a MARKDOWN TABLE:**
 
-**🏆 Recommended: [repo-name]**
-⭐ [stars] stars | 📅 Updated: [date]
-🔧 `uvx [command]` or `npx [command]`
-🔐 Auth: [API Key / OAuth]
+```markdown
+🔍 **Found [N] MCP servers for [Service]:**
 
-**Alternatives:**
-1. **[alt-name]** (⭐ [stars]) - [brief differentiator]
-2. **[alt-name-2]** (⭐ [stars]) - [brief differentiator]
+| # | Name | Stars | Updated | Installation | Auth Type |
+|---|------|-------|---------|--------------|-----------|
+| 1 | owner/repo-name | ⭐ 234 | 2024-11 | `npx` | API Key |
+| 2 | owner/alternative | ⭐ 45 | 2024-10 | `uvx` | OAuth |
+| 3 | owner/another-option | ⭐ 12 | 2024-12 | `docker` | Credentials |
 
-Which one should I use?
+**My recommendation:** Option #1 (most stars, recently updated, simple auth)
+
+Which one would you like to install? (Reply with the number)
 ```
 
 **Wait for user confirmation before proceeding.**
 
 ---
 
-### Step 2: Fetch README Documentation
+### Step 2: Fetch Documentation
 
 **Tool:** `brave-search__brave_web_search`
 
-**Search Query:**
-```
-site:raw.githubusercontent.com "[OWNER]/[REPO]/main/README.md"
-```
+**Multiple fallback strategies:**
 
-**Example:**
-```json
-{
-  "name": "brave-search__brave_web_search",
-  "parameters": {
-    "query": "site:raw.githubusercontent.com \"acme-corp/salesforce-mcp/main/README.md\""
-  }
-}
-```
+1. **Try raw GitHub README:**
+   ```json
+   {
+     "query": "site:raw.githubusercontent.com \"[OWNER]/[REPO]\" README"
+   }
+   ```
 
-**Extract from README:**
-- Installation command (`uvx`, `npx`, or `docker`)
-- Environment variables (names, descriptions)
-- Which variables are secrets (API keys, tokens) vs config (URLs, flags)
+2. **If that fails, try GitHub repo page:**
+   ```json
+   {
+     "query": "[OWNER]/[REPO] site:github.com README installation"
+   }
+   ```
+
+3. **If that fails, try package registry:**
+   ```json
+   {
+     "query": "[package-name] site:npmjs.com OR site:pypi.org installation configuration"
+   }
+   ```
+
+**Extract from Documentation:**
+- Installation command (uvx, npx, or docker)
+- Environment variables and their purpose
+- Which variables are secrets vs configuration
+- Example configuration if available
+
+**If no documentation found:**
+- communicate with the user that the documentation was not found and ask them to provide the documentation or try a different server.
 
 ---
 
@@ -83,7 +105,7 @@ site:raw.githubusercontent.com "[OWNER]/[REPO]/main/README.md"
 **Tool:** `ui_fill_state`
 
 **Store:** `mcp`
-**Store Path:** `addServerForm`
+**Path:** `addServerForm`
 
 **Form Structure:**
 
@@ -92,49 +114,99 @@ site:raw.githubusercontent.com "[OWNER]/[REPO]/main/README.md"
   "store_id": "mcp",
   "updates": {
     "addServerForm": {
-      "name": "salesforce_mcp",
-      "display_name": "Salesforce",
-      "description": "Salesforce CRM integration",
-      "config_template_json": "{\"mcpServers\":{\"salesforce\":{\"command\":\"uvx\",\"args\":[\"--from\",\"salesforce-mcp\",\"salesforce-mcp\"],\"env\":{\"SALESFORCE_API_KEY\":\"{{salesforce_api_key}}\"}}}}",
-      "variable_schema_json": "{\"required\":[\"salesforce_api_key\"],\"properties\":{\"salesforce_api_key\":{\"type\":\"string\",\"title\":\"API Key\",\"description\":\"Your Salesforce API key\",\"secret\":true}}}",
-      "ui_schema_json": "{\"sections\":[{\"title\":\"API Key\",\"type\":\"password\",\"field\":\"salesforce_api_key\"}]}",
+      "name": "service_name_mcp",
+      "display_name": "Service Name",
+      "description": "Brief description of what this server does",
+      "config_template_json": "{\"mcpServers\":{\"service_key\":{\"command\":\"uvx|npx|docker\",\"args\":[...],\"env\":{\"VAR_NAME\":\"{{placeholder}}\"}}}}",
+      "variable_schema_json": "{\"required\":[...],\"properties\":{...}}",
+      "ui_schema_json": "{\"sections\":[...]}",
       "oauth_enabled": false
     }
   }
 }
 ```
 
-**Field Construction Rules:**
+Note: Always set `oauth_enabled` to `false` for API key/credentials servers.
 
-**1. `name`:**
-- lowercase_snake_case
-- No spaces
-- Example: `salesforce_mcp`, `github_integration`
+**Field Construction:**
 
-**2. `config_template_json` (as JSON string):**
+**1. `name`** (lowercase_snake_case, no spaces):
+```
+salesforce_mcp
+github_integration
+```
 
-Template structure:
+**2. `config_template_json`** (JSON string, escaped):
+
+**Example 1 - Simple (Brave Search):**
 ```json
 {
   "mcpServers": {
-    "<server_key>": {
-      "command": "uvx|npx|docker",
-      "args": ["--from", "<package>", "<entrypoint>"],
+    "brave-search": {
+      "command": "npx",
+      "args": ["-y", "@brave/brave-search-mcp-server"],
       "env": {
-        "ENV_VAR_NAME": "{{placeholder_name}}"
+        "BRAVE_API_KEY": "{{brave_api_key}}"
       }
     }
   }
 }
 ```
 
-Rules:
-- **Placeholder names:** lowercase_snake_case (`{{api_key}}`)
-- **Env var names:** UPPERCASE_SNAKE_CASE (`SALESFORCE_API_KEY`)
-- **Escape quotes:** `\"` (remember this is a JSON *string*)
+**Example 2 - With Args (Supabase):**
+```json
+{
+  "mcpServers": {
+    "supabase": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@supabase/mcp-server-supabase@latest",
+        "--project-ref={{project_ref}}"
+      ],
+      "env": {
+        "SUPABASE_ACCESS_TOKEN": "{{supabase_access_token}}"
+      }
+    }
+  }
+}
+```
 
-**3. `variable_schema_json` (as JSON string):**
+**Example 3 - uvx with Version (Google Workspace):**
+```json
+{
+  "mcpServers": {
+    "google_workspace": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "google-workspace-mcp==2.0.1",
+        "google-workspace-worker"
+      ],
+      "env": {
+        "GOOGLE_WORKSPACE_CLIENT_ID": "{{gsuite_client_id}}",
+        "GOOGLE_WORKSPACE_CLIENT_SECRET": "{{gsuite_client_secret}}",
+        "GOOGLE_WORKSPACE_REFRESH_TOKEN": "{{gsuite_refresh_token}}",
+        "GOOGLE_WORKSPACE_ENABLED_CAPABILITIES": "{{enabled_capabilities}}"
+      }
+    }
+  }
+}
+```
 
+**Commands:**
+- `npx` - Run Node.js packages
+- `uvx` - Run Python packages (uv)
+- `docker` - Run Docker containers
+
+**Placeholders:** Use `{{lowercase_snake_case}}`
+**Env Variables:** Use `UPPERCASE_SNAKE_CASE`
+
+**When escaping for JSON string:**
+- `\"` for quotes
+- `\\n` for newlines (if needed)
+
+**3. `variable_schema_json`** (JSON string, escaped):
 ```json
 {
   "required": ["api_key"],
@@ -144,35 +216,78 @@ Rules:
       "title": "API Key",
       "description": "Your service API key",
       "secret": true
+    },
+    "base_url": {
+      "type": "string",
+      "title": "Base URL",
+      "description": "Service endpoint URL",
+      "secret": false,
+      "default": "https://api.service.com"
     }
   }
 }
 ```
 
 Secret classification:
-- `"secret": true` → API keys, tokens, passwords
-- `"secret": false` → URLs, paths, flags, emails
+- `true`: API keys, tokens, passwords, OAuth secrets
+- `false`: URLs, paths, usernames, flags, ports
 
-**4. `ui_schema_json` (as JSON string, can be `{}` for OAuth):**
+**4. `ui_schema_json`** (JSON string, can be `{}`):
 
+**Example 1 - Simple (Brave Search):**
 ```json
 {
   "sections": [
     {
-      "title": "API Key",
+      "title": "API Configuration",
       "type": "password",
-      "field": "api_key"
+      "field": "brave_api_key"
     }
   ]
 }
 ```
 
-Field types: `text`, `textarea`, `password`, `checkbox`, `instructions`
+**Example 2 - With Optional Fields (Supabase):**
+```json
+{
+  "sections": [
+    {
+      "title": "Supabase Access Token",
+      "type": "password",
+      "field": "supabase_access_token",
+      "placeholder": "sbp_xxx",
+      "required": true,
+      "helpText": "Personal access token from your Supabase Dashboard"
+    },
+    {
+      "title": "Project Reference",
+      "type": "text",
+      "field": "project_ref",
+      "placeholder": "your-project-ref",
+      "required": true,
+      "helpText": "Your Supabase project ref (e.g., abcdefghijklmnop)"
+    }
+  ]
+}
+```
 
-**Critical:** `field` MUST match a key in `variable_schema.properties`
+**Supported Section Types:**
+- `password` - Masked input for secrets
+- `text` - Plain text input
+- `textarea` - Multi-line input
+- `checkbox` - Multiple selection with `options` array
+- `instructions` - Static help text (no `field` needed)
+
+**Optional Fields:**
+- `placeholder` - Input placeholder text
+- `required` - Boolean, marks field as required
+- `helpText` - Description shown below field
+- `options` - Array of `{label, value}` for checkbox type
+
+**Critical:** `field` must match `variable_schema.properties` keys
 
 **5. `oauth_enabled`:**
-- `false` for API key auth
+- `false` for API key/credentials
 - `true` for Google/Discord OAuth
 
 ---
@@ -181,7 +296,6 @@ Field types: `text`, `textarea`, `password`, `checkbox`, `instructions`
 
 **Tool:** `ui_trigger_click`
 
-**Action:**
 ```json
 {
   "name": "ui_trigger_click",
@@ -191,7 +305,7 @@ Field types: `text`, `textarea`, `password`, `checkbox`, `instructions`
 }
 ```
 
-The system will parse `config_template_json` and extract all `{{placeholder}}` variables.
+System will parse `config_template_json` and extract `{{placeholder}}` variables.
 
 ---
 
@@ -199,7 +313,6 @@ The system will parse `config_template_json` and extract all `{{placeholder}}` v
 
 **Tool:** `ui_trigger_click`
 
-**Action:**
 ```json
 {
   "name": "ui_trigger_click",
@@ -209,38 +322,36 @@ The system will parse `config_template_json` and extract all `{{placeholder}}` v
 }
 ```
 
-**Read the Result:**
+**Handle the result:**
 
 - **Success (`success: true`):**
   ```
-  ✅ Server template created successfully!
+  ✅ Server template created!
 
-  Next: Configure the server with your credentials.
+  Next: Configure with your credentials.
   Would you like me to help configure it now?
   ```
 
 - **Error (`success: false`):**
-  - **Read the error message**
-  - Fix the issue (common: JSON syntax, missing fields, duplicate name)
+  - Read error message
+  - Fix issue (JSON syntax, missing fields, duplicate name)
   - Return to Step 3 and retry
 
 ---
 
 ### Common Pitfalls
 
-1. **Tool Name Format**: Use `brave-search__brave_web_search`, not `brave_web_search`
+1. **Tool format:** `brave-search__brave_web_search` not `brave_web_search`
 
-2. **JSON Escaping**: Escape quotes in JSON strings:
+2. **JSON escaping:**
    - ❌ `"config_template_json": "{"mcpServers": {...}}"`
    - ✅ `"config_template_json": "{\"mcpServers\": {...}}"`
 
-3. **Field Name Mismatch**: `ui_schema.sections[].field` must match `variable_schema.properties` keys
+3. **Field mismatch:** `ui_schema.field` must match `variable_schema.properties` keys
 
-4. **Placeholder Format**: Use `{{lowercase_snake_case}}`, not `${variable}` or `{variable}`
+4. **Placeholder format:** `{{snake_case}}` not `${var}` or `{var}`
 
-5. **OAuth Servers** (`oauth_enabled: true`):
-   - Include in `variable_schema`: `gsuite_client_id`, `gsuite_client_secret`, `gsuite_refresh_token`
-   - DO NOT include `refresh_token` in `ui_schema` (obtained via OAuth flow)
+5. **Search failures:** If docs not found, proceed with best guess based on package name
 
 ---
 
@@ -248,21 +359,29 @@ The system will parse `config_template_json` and extract all `{{placeholder}}` v
 
 **User:** "Add Salesforce MCP server"
 
-**Step 1: Search**
+**Step 1: Multi-source search**
 ```json
 brave-search__brave_web_search({
-  "query": "\"Salesforce MCP server\" site:github.com"
+  "query": "\"Salesforce MCP server\" site:github.com OR site:mcpservers.org"
 })
-→ Present: salesforce-mcp by acme-corp (⭐ 234 stars)
 ```
 
-**Step 2: Fetch docs**
+Present table:
+```markdown
+| # | Name | Stars | Updated | Installation | Auth |
+|---|------|-------|---------|--------------|------|
+| 1 | tsmztech/mcp-server-salesforce | ⭐ 45 | 2024-11 | `npx` | Credentials |
+| 2 | luvl/salesforce-lite | ⭐ 12 | 2024-10 | `uvx` | API Key |
+
+**Recommendation:** #1 (more comprehensive)
+Which one?
+```
+
+**Step 2: User chooses #1, fetch docs**
 ```json
 brave-search__brave_web_search({
-  "query": "site:raw.githubusercontent.com \"acme-corp/salesforce-mcp/main/README.md\""
+  "query": "tsmztech mcp-server-salesforce installation configuration environment variables"
 })
-→ Extracted: uvx --from salesforce-mcp salesforce-mcp
-→ Env vars: SALESFORCE_API_KEY (secret)
 ```
 
 **Step 3: Fill form**
@@ -274,9 +393,9 @@ ui_fill_state({
       "name": "salesforce_mcp",
       "display_name": "Salesforce",
       "description": "Salesforce CRM integration",
-      "config_template_json": "{\"mcpServers\":{\"salesforce\":{\"command\":\"uvx\",\"args\":[\"--from\",\"salesforce-mcp\",\"salesforce-mcp\"],\"env\":{\"SALESFORCE_API_KEY\":\"{{salesforce_api_key}}\"}}}}",
-      "variable_schema_json": "{\"required\":[\"salesforce_api_key\"],\"properties\":{\"salesforce_api_key\":{\"type\":\"string\",\"title\":\"API Key\",\"secret\":true}}}",
-      "ui_schema_json": "{\"sections\":[{\"title\":\"API Key\",\"type\":\"password\",\"field\":\"salesforce_api_key\"}]}",
+      "config_template_json": "{\"mcpServers\":{\"salesforce\":{\"command\":\"npx\",\"args\":[\"-y\",\"@tsmztech/mcp-server-salesforce\"],\"env\":{\"SALESFORCE_USERNAME\":\"{{salesforce_username}}\",\"SALESFORCE_PASSWORD\":\"{{salesforce_password}}\",\"SALESFORCE_SECURITY_TOKEN\":\"{{salesforce_security_token}}\"}}}}",
+      "variable_schema_json": "{\"required\":[\"salesforce_username\",\"salesforce_password\",\"salesforce_security_token\"],\"properties\":{\"salesforce_username\":{\"type\":\"string\",\"title\":\"Username\",\"secret\":false},\"salesforce_password\":{\"type\":\"string\",\"title\":\"Password\",\"secret\":true},\"salesforce_security_token\":{\"type\":\"string\",\"title\":\"Security Token\",\"secret\":true}}}",
+      "ui_schema_json": "{\"sections\":[{\"title\":\"Username\",\"type\":\"text\",\"field\":\"salesforce_username\"},{\"title\":\"Password\",\"type\":\"password\",\"field\":\"salesforce_password\"},{\"title\":\"Security Token\",\"type\":\"password\",\"field\":\"salesforce_security_token\"}]}",
       "oauth_enabled": false
     }
   }
@@ -291,8 +410,6 @@ ui_trigger_click({"element_id": "proceed-to-variables-btn"})
 **Step 5: Save**
 ```json
 ui_trigger_click({"element_id": "add-server-submit-btn"})
-→ {success: true}
-→ ✅ Server created!
 ```
 
 ---
