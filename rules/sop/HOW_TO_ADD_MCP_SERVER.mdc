@@ -107,6 +107,15 @@ Which one would you like to install? (Reply with the number)
 **Store:** `mcp`
 **Path:** `addServerForm`
 
+⚠️ **IMPORTANT: You MUST fill ALL of these fields in a single ui_fill_state call:**
+- `name` - Server identifier (required)
+- `display_name` - Human-readable name (required)
+- `description` - What the server does (required)
+- `config_template_json` - MCP server configuration (required)
+- `variable_schema_json` - Variable definitions (required)
+- `ui_schema_json` - Form UI definition (required - DO NOT leave as `{}`)
+- `oauth_enabled` - OAuth flag (required)
+
 **Form Structure:**
 
 ```json
@@ -119,14 +128,16 @@ Which one would you like to install? (Reply with the number)
       "description": "Brief description of what this server does",
       "config_template_json": "{\"mcpServers\":{\"service_key\":{\"command\":\"uvx|npx|docker\",\"args\":[...],\"env\":{\"VAR_NAME\":\"{{placeholder}}\"}}}}",
       "variable_schema_json": "{\"required\":[...],\"properties\":{...}}",
-      "ui_schema_json": "{\"sections\":[...]}",
+      "ui_schema_json": "{\"sections\":[{\"title\":\"...\",\"type\":\"password|text\",\"field\":\"...\"}]}",
       "oauth_enabled": false
     }
   }
 }
 ```
 
-Note: Always set `oauth_enabled` to `false` for API key/credentials servers.
+**Critical Notes:**
+- Always set `oauth_enabled` to `false` for API key/credentials servers.
+- **NEVER leave `ui_schema_json` as `"{}"` or empty** - always define sections for each variable so users have a proper form to fill out.
 
 **Field Construction:**
 
@@ -232,7 +243,9 @@ Secret classification:
 - `true`: API keys, tokens, passwords, OAuth secrets
 - `false`: URLs, paths, usernames, flags, ports
 
-**4. `ui_schema_json`** (JSON string, can be `{}`):
+**4. `ui_schema_json`** (JSON string - **REQUIRED, do not leave empty**):
+
+⚠️ **Always provide a proper ui_schema** that defines form sections for each variable. This determines how users will input their credentials. An empty `{}` will result in no form fields being shown.
 
 **Example 1 - Simple (Brave Search):**
 ```json
@@ -352,6 +365,10 @@ System will parse `config_template_json` and extract `{{placeholder}}` variables
 4. **Placeholder format:** `{{snake_case}}` not `${var}` or `{var}`
 
 5. **Search failures:** If docs not found, proceed with best guess based on package name
+
+6. **Missing ui_schema:**
+   - ❌ `"ui_schema_json": "{}"` - Users won't see any form fields!
+   - ✅ Always define sections for each variable with proper `field`, `type`, and `title`
 
 ---
 
