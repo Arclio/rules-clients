@@ -17,11 +17,15 @@ Clarify with the user:
 ### Step 2: Review Current Workflow
 
 **Available in context:**
-- Current workflow content (`.wf.md` format)
-- Workflow metadata (title, description, scenario)
-- Current step definitions
+- `title` - Workflow name
+- `description` - One-sentence summary
+- `scenario` - Human-readable step breakdown (what the workflow does in plain English)
+- `content` - The full `.wf.md` workflow definition
 
-**Action:** Read the current workflow to understand its structure before making changes.
+**Action:** Read the current workflow content to understand its structure before making changes. Pay attention to:
+- What tools are being used
+- How steps reference each other's outputs
+- Whether it uses parameters, iterators, or branches
 
 ### Step 3: Make the Requested Modification
 
@@ -59,14 +63,31 @@ Use `ui_fill_state` to update specific fields:
 
 ### Step 4: Validate the Changes
 
-**Before submitting, verify:**
-- [ ] If you modified steps, all variable references are still valid
-- [ ] If you added a step, it has required fields (`**Tool:**` or `**Type:**`)
-- [ ] If you removed a step, no later steps reference its outputs
-- [ ] If you changed a tool, you've verified the new tool exists and tested it
-- [ ] Frontmatter is still valid (if you touched it)
+**⚠️ VALIDATION CHECKLIST (Run through this BEFORE submitting):**
 
-**Reference:** Check against `WORKFLOW_SYNTAX` and `WORKFLOW_PATTERNS` if needed.
+| Check | What to Verify |
+|-------|----------------|
+| ✅ Variable references | All `${stepN.var}` references point to existing outputs |
+| ✅ Scope rules | Child step outputs not accessed from outside containers |
+| ✅ Step numbering | Steps are numbered sequentially (1, 2, 3...) |
+| ✅ Required fields | Each step has either `**Tool:**` or `**Type:**` |
+| ✅ Parameters declared | Every `${workflow.params.X}` has matching entry in `parameters:` block |
+| ✅ LLM model valid | Every `llm` step has `model: "anthropic/claude-sonnet-4-5"` (or other valid model) |
+| ✅ LLM inputs complete | Every `llm` step has `system_prompt`, `user_prompt`, AND `model` |
+| ✅ Frontmatter valid | YAML syntax is correct, required fields present |
+
+**If you removed a step:**
+- Check that no later steps reference its outputs
+- Update step numbers if needed
+
+**If you added an LLM step:**
+- Include ALL three required inputs: `system_prompt`, `user_prompt`, `model`
+- Use a valid model from `WORKFLOW_TOOLING`
+
+**If you modified workflow parameters:**
+- Ensure `parameters:` block in frontmatter matches all `${workflow.params.*}` usage
+
+**Reference:** Check against `WORKFLOW_SYNTAX`, `WORKFLOW_PATTERNS`, and `WORKFLOW_TOOLING` as needed.
 
 ### Step 5: After Saving
 
@@ -87,16 +108,21 @@ Use `ui_fill_state` to update specific fields:
 }
 ```
 
-**Task: Change category**
+**Task: Update the scenario (human-readable summary)**
+
+The `scenario` field is a **human-readable step breakdown** of what the workflow does. When editing a workflow, update the scenario to match any changes you make to the steps.
+
 ```json
 {
   "store_name": "workflow",
   "state_path": "workflowEditState",
   "updates": {
-    "scenario": "reporting"
+    "scenario": "1. Fetch all calendar events for the week\n2. Analyze events and identify key meetings\n3. Generate formatted summary\n4. Create Google Doc with results"
   }
 }
 ```
+
+**Why this matters:** Users who don't understand workflow syntax rely on the scenario to understand what the workflow does.
 
 **Task: Add a new step**
 1. Read current content
@@ -120,3 +146,7 @@ Use `ui_fill_state` to update specific fields:
 3. **Don't forget to test tools** - If you're adding a new tool, verify it works
 4. **Don't submit partial content** - When editing content, submit the full `.wf.md`
 5. **Don't skip validation** - Catch errors before saving
+6. **Don't forget `parameters:`** - If adding `${workflow.params.X}`, ensure X is declared in frontmatter
+7. **Don't forget `model:` in LLM steps** - Every `llm` step needs `model: "anthropic/claude-sonnet-4-5"` (or other valid model)
+8. **Don't use Brave Search for web research** - Use `llm` tool instead (proper output format)
+9. **Don't forget to update the scenario** - If you changed what the workflow does, update the scenario to match

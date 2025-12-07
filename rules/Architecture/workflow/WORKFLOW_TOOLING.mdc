@@ -31,7 +31,7 @@ MCP (Model Context Protocol) tools are used to interact with external systems li
 
 ### 3.0 Using the `llm` Tool
 
-The `llm` tool is a specialized, built-in tool that provides access to Large Language Model capabilities for reasoning and analysis.
+The `llm` tool is a specialized, built-in tool that provides access to Large Language Model capabilities for reasoning and analysis. **This tool is NOT an MCP tool** – it is implemented internally by the workflow engine.
 
 **When to Use the `llm` Tool:**
 -   Analyzing unstructured or semi-structured data.
@@ -42,16 +42,79 @@ The `llm` tool is a specialized, built-in tool that provides access to Large Lan
 
 **How to Use the `llm` Tool:**
 1.  **Tool Name:** Set `**Tool:**` to `llm`.
-2.  **Inputs:** Provide `system_prompt` and `user_prompt`. You can also specify `model`, `temperature`, and `rules`.
+2.  **Inputs (ALL REQUIRED):**
+    -   `system_prompt`: (string, **Required**) The instruction that sets the LLM's role and behavior.
+    -   `user_prompt`: (string, **Required**) The actual data or query to process.
+    -   `model`: (string, **Required**) The model identifier. **Must be one of the supported models below.**
 3.  **Outputs:** The `**Outputs:**` section for an `llm` tool is unique. It acts as a **direct instruction** to the LLM, defining the exact JSON structure it **must** return. The `extraction_path` should simply be the corresponding key name.
 
-    *Example:*
-    ```markdown
-    **Outputs:**
-      review_summary: string = summary
-      is_approved: boolean = approved
-    ```
-    This instructs the LLM to return a JSON object like: `{"summary": "...", "approved": true}`.
+**⚠️ CRITICAL: Supported Models (Use EXACTLY as shown)**
+
+| Model ID | When to Use |
+|----------|-------------|
+| `anthropic/claude-sonnet-4-5` | **Recommended default** – Best balance of quality and speed |
+| `anthropic/claude-opus-4-5` | Complex reasoning requiring maximum intelligence |
+| `anthropic/claude-haiku-4-5` | Simple, fast tasks where speed is priority |
+| `openai/gpt-5.1` | Alternative flagship for complex reasoning |
+| `openai/gpt-5-mini` | Cost-effective alternative for simple tasks |
+| `google/gemini-3-pro` | Tasks requiring very long context (2M tokens) |
+| `google/gemini-2.5-flash` | Fast tasks with long context needs |
+
+**⚠️ DO NOT use:**
+- Bare model names without provider prefix like `claude-sonnet-4-5` (INVALID)
+- Models not listed above
+
+**Example LLM Step:**
+```markdown
+## Step 2: Analyze Data
+
+**Tool:** `llm`
+**Inputs:**
+  system_prompt: "You are a data analyst. Return a JSON object with your analysis."
+  user_prompt: |
+    Analyze the following data and provide insights:
+    ${step1.raw_data}
+  model: "anthropic/claude-sonnet-4-5"
+**Outputs:**
+  review_summary: string = summary
+  is_approved: boolean = approved
+```
+This instructs the LLM to return a JSON object like: `{"summary": "...", "approved": true}`.
+
+#### 3.1 Internet Search with the `llm` Tool
+
+**⚠️ CRITICAL: Always use the `llm` tool for internet search in workflows.**
+
+When a workflow needs to search the internet or perform web research, you **MUST** use the `llm` tool – NOT MCP tools like `brave_search__search` or similar.
+
+**Why?**
+- Our `llm` tool is optimized for search and produces outputs in the exact format the workflow engine expects
+- The `**Outputs:**` contract works seamlessly – just specify your output variables
+- Using external search MCP tools (like Brave Search) will produce raw output that doesn't match the expected format, causing validation failures
+
+**Correct Pattern (Use This):**
+```markdown
+## Step 1: Search for Information
+
+**Tool:** `llm`
+**Inputs:**
+  system_prompt: "Search the web and provide relevant information."
+  user_prompt: "Find the latest news about ${workflow.params.topic}"
+  model: "anthropic/claude-sonnet-4-5"
+**Outputs:**
+  search_results: string = findings
+  sources: array = sources
+```
+
+**Incorrect Pattern (Avoid):**
+```markdown
+## Step 1: Search for Information
+**Tool:** `brave_search__search`  # ❌ DON'T DO THIS
+**Inputs:**
+  query: "..."
+**Outputs:**
+  results: array = results  # ❌ Output format won't match!
+```
 
 ### 4.0 Using Container & Transform Steps
 

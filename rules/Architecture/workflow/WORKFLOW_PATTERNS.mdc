@@ -109,7 +109,52 @@ Use the `on_error` configuration to build resilient workflows that can handle fa
     -   *Example: Sending a log message to a monitoring service.*
 
 
-### 5.0 Common Pitfalls to Avoid (Anti-Patterns)
+### 5.0 Container Nesting Rules (CRITICAL)
+
+The workflow engine has strict rules about nesting containers inside other containers.
+
+**✅ ALLOWED Nesting:**
+
+| Outer Container | Can Contain | Example Use Case |
+|-----------------|-------------|------------------|
+| `branch` | `iterator` | Guard-then-Iterate pattern (check if array is non-empty, then iterate) |
+| `branch` | standard steps | Conditional execution paths |
+| `iterator` | standard steps | Process each item in an array |
+
+**❌ PROHIBITED Nesting (Will Fail Validation):**
+
+| Outer Container | Cannot Contain | Why |
+|-----------------|----------------|-----|
+| `iterator` | `iterator` | Nested loops are too complex; flatten your data instead |
+| `branch` | `branch` | Nested conditionals are too complex; use separate steps |
+| `iterator` | `branch` | Conditional logic inside iteration is not supported |
+
+**Example: Guard-then-Iterate (Allowed)**
+```markdown
+## Step 2: Check and Process
+**Type:** branch
+**Condition:** ${step1.items.length} > 0
+
+**Then:**
+  ### Step A: Process Items
+  **Type:** iterator
+  **Iterator:**
+    source: ${step1.items}
+  **Steps:**
+    ### Step A1: Handle Item
+    ...
+```
+
+**Example: Nested Iterator (PROHIBITED)**
+```markdown
+## Step 2: Outer Loop
+**Type:** iterator
+**Steps:**
+  ### Step A: Inner Loop  # ❌ NOT ALLOWED
+  **Type:** iterator      # Parser will reject this
+```
+
+### 6.0 Common Pitfalls to Avoid (Anti-Patterns)
 
 1.  **Dangling References (DISALLOWED):** Never reference an output from a step inside a container (`branch` or `iterator`) from a step outside of it. The parser will reject this as an invalid workflow.
     ```markdown
@@ -131,3 +176,5 @@ Use the `on_error` configuration to build resilient workflows that can handle fa
 3.  **Guessing Output Schemas:** For tools without a clear output schema, never try to guess the extraction path (e.g., `result.data.items[0]`). **Always** use the Two-Step Pattern.
 
 4.  **Misusing Container Steps:** Container steps (`iterator`, `branch`) exist only to control flow. They **MUST NOT** have their own `**Tool:**`, `**Inputs:**`, or `**Outputs:**` sections. All actions must be performed by their child steps.
+
+5.  **Deep Nesting:** Do not try to nest containers beyond one level. If you need complex logic, flatten your workflow structure.

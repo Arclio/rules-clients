@@ -7,6 +7,43 @@ alwaysApply: false
 
 This rule defines the precise syntax for a `.wf.md` file.
 
+### 0.0 Golden Template (START HERE)
+
+**Copy this template as your starting point. The `parameters:` block is REQUIRED if you use `${workflow.params.*}` anywhere.**
+
+```markdown
+---
+title: "My Workflow Title"
+description: "Brief description of what this workflow does"
+version: "2.1"
+autonomous: true
+timeout: 600
+parameters:
+  my_input:
+    type: string
+    description: "Input parameter for this workflow"
+    required: true
+---
+
+## Step 1: Fetch Data
+
+**Tool:** `some_mcp_tool__action`
+**Inputs:**
+  param: "${workflow.params.my_input}"
+**Outputs:**
+  raw_data: any = result
+
+## Step 2: Analyze with LLM
+
+**Tool:** `llm`
+**Inputs:**
+  system_prompt: "You are a helpful assistant. Return JSON with your analysis."
+  user_prompt: "Analyze: ${to_json(step1.raw_data)}"
+  model: "anthropic/claude-sonnet-4-5"
+**Outputs:**
+  analysis: object = result
+```
+
 ### 1.0 YAML Frontmatter
 
 Every workflow must begin with a YAML frontmatter block enclosed by `---`.
@@ -21,6 +58,35 @@ Every workflow must begin with a YAML frontmatter block enclosed by `---`.
 | `timeout` | `integer`| No | Maximum execution time for the workflow in seconds. Default: `900`. |
 | `tool_timeout`|`integer`| No | Default timeout in seconds for individual tool calls. Default: `60`. |
 | `is_public` | `boolean` | No | Whether the workflow is publicly accessible. Default: `false`. |
+| `parameters` | `object` | **Conditional** | **REQUIRED if you use `${workflow.params.*}`.** See Section 1.1. |
+
+#### 1.1 Workflow Parameters (CRITICAL)
+
+**⚠️ COMMON ERROR:** Using `${workflow.params.week_start}` without declaring `week_start` in the `parameters:` block will cause validation to fail.
+
+If your workflow uses `${workflow.params.some_name}` in any step, you **MUST** declare that parameter in the frontmatter:
+
+```yaml
+parameters:
+  param_name:
+    type: string | integer | boolean | array | object
+    description: "Human-readable description"
+    required: true | false
+    default: <optional default value>
+```
+
+**Example:**
+```yaml
+parameters:
+  week_start:
+    type: string
+    description: "Start date of the week (YYYY-MM-DD)"
+    required: true
+  week_end:
+    type: string
+    description: "End date of the week (YYYY-MM-DD)"
+    required: true
+```
 
 ### 2.0 Step Structure
 
@@ -50,6 +116,74 @@ A brief, natural language description of the step's objective.
 -   `**Inputs:**`: (Optional) A YAML block defining the parameters for the tool call.
 -   `**Outputs:**`: (Optional) A list of output contracts (`variable: type = path`) that define the data this step produces. This directive is **not allowed** in `branch` containers.
 
+#### 2.1 Iterator Step Syntax
+
+Iterators loop over an array and execute child steps for each item.
+
+```markdown
+## Step 2: Process Items in Batches
+
+**Type:** iterator
+
+**Iterator:**
+  source: ${step1.items_array}
+  batch_size: 1
+
+**Steps:**
+  ### Step A: Process Single Item
+  **Tool:** `some_tool`
+  **Inputs:**
+    item_data: ${iterator.item}
+  **Outputs:**
+    processed: any = result
+
+**Iterator-Outputs:**
+  all_results: array = collect(stepA.processed)
+```
+
+**Iterator-specific directives:**
+- `**Iterator:**` - Configuration block with `source` (array to iterate) and optional `batch_size`
+- `**Steps:**` - Contains child steps (use `### Step A:`, `### Step B:`, etc.)
+- `**Iterator-Outputs:**` - Aggregation functions: `collect()`, `count()`, `sum()`, `first()`, `last()`
+
+**Iterator variables:**
+- `${iterator.item}` - Current item (when `batch_size: 1`)
+- `${iterator.batch}` - Current batch array (when `batch_size > 1`)
+- `${iterator.index}` - Current 0-based index
+
+#### 2.2 Branch Step Syntax
+
+Branches conditionally execute one of two paths.
+
+```markdown
+## Step 1: Check Condition
+
+**Type:** branch
+
+**Condition:** ${step0.some_array.length} > 0
+
+**Then:**
+  ### Step A: Handle Non-Empty Case
+  **Tool:** `some_tool`
+  **Outputs:**
+    result: any = result
+
+**Else:**
+  ### Step B: Handle Empty Case
+  **Tool:** `logger__log`
+  **Inputs:**
+    message: "No items to process"
+  **Outputs:**
+    log_result: any = result
+```
+
+**Branch-specific directives:**
+- `**Condition:**` - Expression that evaluates to `true` or `false`
+- `**Then:**` - Child steps executed if condition is true
+- `**Else:**` - Child steps executed if condition is false
+
+**⚠️ CRITICAL:** Branch steps have NO `**Outputs:**`. Data from inside a branch CANNOT be accessed outside.
+
 ### 3.0 Variable Syntax & Scope Resolution
 
 Variables are used to pass data between steps and are referenced using the `${...}` syntax. The engine resolves variables by searching through a strict scope chain.
@@ -60,6 +194,8 @@ Variables are used to pass data between steps and are referenced using the `${..
 | `${stepA.variable}` | **Container Local** | Accesses an output from a *previous child step* within the same `iterator` or `branch` block. |
 | `${step<N>.variable}` | **Global** | Accesses a validated output from a previous top-level step (e.g., `${step1.user_id}`). |
 | `${workflow.params.variable}` | **Global** | Accesses the initial context provided when the workflow execution begins. |
+
+**Note:** Deep property access (e.g., `${step1.user.id}` or `${step1.items[0]}`) is **NOT** supported directly in variable references. You must use a **Transform** step with `json_path_extract` to extract nested values into a new variable.
 
 #### **CRITICAL: Scope Isolation Rule**
 > Outputs generated by child steps inside a container (`branch` or `iterator`) are **strictly local** to that container's execution block. They **CANNOT** be referenced by any step outside of it. An `iterator` can only expose data via its `**Iterator-Outputs:**` section. A `branch` cannot expose any data.

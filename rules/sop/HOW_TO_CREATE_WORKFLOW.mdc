@@ -28,9 +28,11 @@ Ask clarifying questions if needed:
 
 **Why:** You cannot write a valid workflow without knowing the exact tool signatures and output structures.
 
-### Step 3: Draft the Workflow Content
+### Step 3: Draft and Validate Content (CRITICAL)
 
-**Reference:** Load and follow `WORKFLOW_SYNTAX` and `WORKFLOW_PATTERNS` rules.
+**Reference:** Load and follow `WORKFLOW_SYNTAX` and `WORKFLOW_PATTERNS` rules. Start from the **Golden Template** in `WORKFLOW_SYNTAX`.
+
+**Action:** Before calling any UI tool, mentally draft the `.wf.md` content and run through the validation checklist.
 
 **Required elements:**
 1. **Frontmatter** (YAML block at top):
@@ -38,6 +40,7 @@ Ask clarifying questions if needed:
    - `description`: One-sentence summary
    - `version`: "2.1"
    - `autonomous`: true
+   - `parameters`: **REQUIRED if you use `${workflow.params.*}` anywhere!**
 
 2. **Steps** (one or more):
    - Each step must have: `## Step N: Title`
@@ -45,13 +48,23 @@ Ask clarifying questions if needed:
    - Define `**Inputs:**` for tool parameters
    - Define `**Outputs:**` with variable name, type, and extraction path
 
-**Validation checklist:**
-- [ ] Frontmatter has all required fields
-- [ ] Every step is numbered sequentially
-- [ ] Every variable reference (`${...}`) points to a defined output
-- [ ] No scope violations (child step outputs accessed from parent)
-- [ ] Tool names match those verified in Step 2
-- [ ] Output extraction paths match verified tool responses
+**⚠️ VALIDATION CHECKLIST (Run through this BEFORE filling the form):**
+
+| Check | What to Verify |
+|-------|----------------|
+| ✅ Parameters declared | Every `${workflow.params.X}` has matching entry in `parameters:` block |
+| ✅ LLM model specified | Every `llm` tool step has `model: "anthropic/claude-sonnet-4-5"` (or other valid model) |
+| ✅ LLM inputs complete | Every `llm` step has `system_prompt`, `user_prompt`, AND `model` |
+| ✅ Steps numbered | Steps are numbered sequentially: 1, 2, 3... |
+| ✅ Variable references valid | Every `${stepN.var}` references a declared output |
+| ✅ No scope violations | Child step outputs not accessed from parent scope |
+| ✅ Tool names correct | Tool names match those verified in Step 2 |
+| ✅ Internet search uses LLM | For web search, use `llm` tool (NOT `brave_search__*`) |
+
+**Common Validation Failures (Avoid These):**
+- ❌ `Workflow references undeclared parameters: week_start` → Add `week_start` to `parameters:` block
+- ❌ `LLM call missing required 'model' parameter` → Add `model: "anthropic/claude-sonnet-4-5"`
+
 
 ### Step 4: Fill the Creation Form
 
@@ -64,16 +77,46 @@ Use `ui_fill_state` to populate the form:
   "updates": {
     "title": "Workflow Title",
     "description": "Brief description",
-    "scenario": "data_processing",  // or other category
-    "content": "---\ntitle: ...\n..."  // Full .wf.md content
+    "scenario": "1. Fetch calendar events for the week\n2. Analyze events with LLM\n3. Generate summary document\n4. Save to Google Drive",
+    "content": "---\ntitle: ...\n..."
   }
 }
 ```
 
-**Field rules:**
-- `title`: Must not be empty
-- `scenario`: Pick appropriate category based on workflow type
-- `content`: Must be valid `.wf.md` (validated in Step 3)
+**Field Requirements:**
+
+| Field | Purpose | Guidelines |
+|-------|---------|------------|
+| `title` | Workflow name | Short, descriptive (e.g., "Weekly Calendar Summary") |
+| `description` | One-sentence summary | Brief overview of what it does |
+| `scenario` | **Human-readable step breakdown** | See below - THIS IS CRITICAL |
+| `content` | The `.wf.md` workflow definition | Must pass validation from Step 3 |
+
+#### The `scenario` Field (CRITICAL FOR USER UNDERSTANDING)
+
+The `scenario` field is **NOT** part of the `.wf.md` syntax - it's a form field that provides a **human-readable summary** of what the workflow does, step by step.
+
+**Why it matters:** Users may not understand workflow syntax, but they CAN understand the scenario. It lets them verify the workflow does what they expect.
+
+**How to write a good scenario:**
+- Break down the workflow into numbered, plain-English steps
+- Each step should describe WHAT happens, not HOW (no technical details)
+- Keep it concise but complete
+
+**Good scenario example:**
+```
+1. Get all calendar events for the specified week
+2. Analyze the events and identify key meetings
+3. Generate a formatted summary with daily breakdown
+4. Create a Google Doc with the summary
+5. Share the document link
+```
+
+**Bad scenario example (too technical):**
+```
+Execute google_workspace__calendar_get_events with time_min and time_max params,
+then call llm tool with claude-sonnet-4-5 to analyze...
+```
 
 ### Step 5: **SAVE the Workflow** (CRITICAL STEP)
 
@@ -122,3 +165,7 @@ After receiving `success: true` from the save button:
 5. **Don't create dangling variable references** - Every `${stepN.var}` must exist
 6. **Don't use tools you haven't tested** - You need to know their output structure
 7. **Don't assume success** - Wait for explicit confirmation from tool results
+8. **Don't forget `parameters:`** - If you use `${workflow.params.X}`, declare X in frontmatter
+9. **Don't forget `model:` in LLM steps** - Always include `model: "anthropic/claude-sonnet-4-5"`
+10. **Don't use old/invalid model names** - Only use models from the supported list in `WORKFLOW_TOOLING`
+11. **Don't use Brave Search for web research** - Use `llm` tool instead (proper output format)
