@@ -1,0 +1,344 @@
+---
+description: "Operational Protocol: Editing an application. State-based guidance for helping users modify existing applications via the edit modal."
+globs: []
+alwaysApply: false
+---
+
+# Protocol: Edit Application
+
+**Purpose:** Guide the user through modifying an existing application's metadata, layout, components, or data sources.
+
+**Prerequisites:**
+- User is on `/applications?edit={id}` (edit modal is open)
+- An existing application is loaded for editing
+- User has identified what they want to change
+
+---
+
+## State Machine Overview
+
+```
+UNDERSTAND → REVIEW → MODIFY → VALIDATE → SAVE → COMPLETE
+    ↑           │         │
+    └───────────┴─────────┘ (can return if issues found)
+```
+
+---
+
+## State: UNDERSTAND
+
+### Indicators
+- User has requested a change to the application
+- The specific modification needed is not yet clear
+- You need to clarify what aspect to modify
+
+### Context Check
+```
+layer_type: "modal"
+modal_id: "edit-application-modal"
+application_id: The ID of the application being edited
+form_data: { name: "...", description: "...", manifestJson: "...", jsonError: null }
+```
+
+### Goal
+Clarify exactly what the user wants to modify.
+
+### Actions
+
+**1. Ask clarifying questions:**
+- What aspect needs modification (metadata, layout, components, data sources, actions)?
+- Are they adding, removing, or modifying elements?
+- Is this a fix for an error or a feature addition?
+
+**2. Categories of changes:**
+
+| Category | What it affects | Approach |
+|----------|----------------|----------|
+| Metadata | Name, description | Simple field update |
+| Layout | Structure, containers | Patch or replace layout section |
+| UI Elements | Components, props | Patch specific element |
+| Data Sources | MCP tools, transforms | Patch data source config |
+| Actions | Workflow triggers | Patch actions section |
+
+### Transitions
+- User clarifies what to change → **REVIEW**
+- Already clear from initial request → **REVIEW**
+
+---
+
+## State: REVIEW
+
+### Indicators
+- Modification type is understood
+- Need to examine current manifest structure
+- Haven't yet identified what specifically to edit
+
+### Context Check
+```
+form_data.manifestJson: Current manifest JSON
+form_data.name: Current name
+form_data.description: Current description
+form_data.jsonError: Any existing syntax errors
+```
+
+### Goal
+Understand the current application structure before making changes.
+
+### Actions
+
+**1. Parse the current manifest:**
+- Examine `form_data.manifestJson`
+- Identify layout structure, elements, data sources, actions
+
+**2. Map the structure:**
+- List all UI elements and their components
+- List all data sources and their tools
+- List all actions
+- Identify element-to-data-source relationships
+
+**3. Identify the section(s) to modify:**
+- For metadata: `name` or `description` field
+- For layout: `layout` section in manifest
+- For components: specific entry in `ui_elements`
+- For data: specific entry in `data_sources`
+- For actions: specific entry in `actions`
+
+### Transitions
+- Section to modify identified → **MODIFY**
+- Current structure unclear → Ask user for clarification
+- JSON has syntax errors → Fix errors first, then **MODIFY**
+
+---
+
+## State: MODIFY
+
+### Indicators
+- Current structure is understood
+- Ready to make the requested modification
+- Know which section(s) need to change
+
+### Context Check
+- Reference `APPLICATION_SYNTAX` for correct format
+- Reference `APPLICATION_COMPONENTS` for valid components
+- Note line numbers for patching
+
+### Goal
+Make the specific modification requested.
+
+### Actions
+
+**For metadata changes (name, description):**
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", "updates": {"applicationEditState": {"name": "New Application Name", "description": "Updated description"}}}}
+```
+
+**For manifest JSON changes (DEFAULT: use patching):**
+
+1. Identify the section that needs modification
+2. Determine the line range containing that section
+3. Apply targeted patch:
+
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 23, "end_line": 35, "expected_text": "... current JSON at those lines ...", "replacement_text": "... updated JSON ..."}}
+```
+
+**When to use patching:**
+- Adding a single component
+- Fixing a data source configuration
+- Modifying component props
+- Adding/updating an action
+- Most targeted edits
+
+**When to use full replacement:**
+- Major layout restructuring
+- Redesigning the entire application
+- User explicitly requests starting over
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", "updates": {"applicationEditState": {"manifestJson": "{ ... full new manifest ... }"}}}}
+```
+
+### Common Modification Patterns
+
+| Task | Approach |
+|------|----------|
+| Add UI element | Patch `ui_elements` section + patch layout |
+| Modify component props | Patch specific element entry |
+| Change data source tool | Patch `data_sources` entry |
+| Fix transformation | Patch transformations array |
+| Add action | Patch `actions` section |
+| Restructure layout | Consider full replacement |
+
+### Transitions
+- Modification applied → **VALIDATE**
+- Need more info about MCP tools → Query tools, return to **MODIFY**
+- Unclear how to implement → Ask user for clarification
+
+---
+
+## State: VALIDATE
+
+### Indicators
+- Modification has been applied
+- Need to verify the changes are correct
+- Haven't yet confirmed structure validity
+
+### Context Check
+```
+form_data.manifestJson: Updated manifest
+form_data.jsonError: Should be null after valid edit
+```
+
+### Goal
+Verify the modifications maintain application validity.
+
+### Actions
+
+**1. Validation checklist:**
+
+- [ ] JSON syntax is valid (no `jsonError`)
+- [ ] All `element_id` in layout exist in `ui_elements`
+- [ ] All `data_source_id` references exist in `data_sources`
+- [ ] All `action_id` references exist in `actions`
+- [ ] All `component` names are valid
+- [ ] All `workflow_id` values are integers
+- [ ] No orphaned elements (in `ui_elements` but not in layout)
+
+**2. If validation fails:**
+- Identify the specific issue
+- Use patching to fix
+- Re-validate
+
+### Transitions
+- All validations pass → **SAVE**
+- Validation fails → Fix with patching, re-validate
+- Major issues discovered → Return to **MODIFY**
+
+---
+
+## State: SAVE
+
+### Indicators
+- Modifications are validated
+- Ready to persist changes
+- Save button should be available
+
+### Context Check
+```
+elements: Should include save button
+form_data.jsonError: Must be null
+```
+
+### Goal
+Save the modified application and verify success.
+
+### Actions
+
+**1. Check for JSON validation errors:**
+- If `jsonError` is present → Fix before saving
+
+**2. Click the save button:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-application-save-btn"}}
+```
+
+**3. Verify result:**
+
+Check the tool result:
+- `success: true` → Proceed to **COMPLETE**
+- `success: false` → Read error message
+
+**4. If save failed:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Invalid JSON" | Malformed manifest | Fix JSON syntax |
+| "Invalid component" | Unknown component | Check APPLICATION_COMPONENTS |
+| "Invalid reference" | Dangling element/DS ref | Fix reference or add missing |
+
+### Transitions
+- Save successful → **COMPLETE**
+- Save failed with fixable error → Return to **MODIFY**
+- Save failed with unclear error → Return to user with status
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- Changes have been saved
+- Modal has closed
+- Application is updated
+
+### Actions
+
+**1. Confirm what was changed:**
+
+```
+✅ **Application updated successfully!**
+
+**Changes made:**
+- [List specific changes]
+
+**Would you like to:**
+- Open the application to see the changes?
+- Make additional modifications?
+```
+
+**2. Offer logical next action:**
+- View changes → Click `open-application-{id}`
+- Continue editing → Return to **UNDERSTAND**
+- Done → User can proceed
+
+---
+
+## Reference: Patching Examples
+
+### Add a New Metric Card
+
+**Step 1: Patch ui_elements to add the component**
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 45, "end_line": 45, "expected_text": "    \"existing_metric\": { ... }", "replacement_text": "    \"existing_metric\": { ... },\n    \"new_metric\": {\n      \"component\": \"MetricCard\",\n      \"props\": {\n        \"title\": \"New Metric\",\n        \"data_source_id\": \"new_ds\"\n      }\n    }"}}
+```
+
+**Step 2: Patch layout to reference the new element**
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 12, "end_line": 15, "expected_text": "    \"children\": [\n      { \"element_id\": \"existing\" }\n    ]", "replacement_text": "    \"children\": [\n      { \"element_id\": \"existing\" },\n      { \"element_id\": \"new_metric\" }\n    ]"}}
+```
+
+**Step 3: Add data source if needed**
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 78, "end_line": 78, "expected_text": "    \"existing_ds\": { ... }", "replacement_text": "    \"existing_ds\": { ... },\n    \"new_ds\": {\n      \"type\": \"mcp_tool\",\n      \"tool_name\": \"mcp_server_tool\",\n      \"transformations\": []\n    }"}}
+```
+
+### Fix a Transformation Path
+
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 89, "end_line": 91, "expected_text": "      { \"operation\": \"get_item\", \"path\": \"wrong.path\" }", "replacement_text": "      { \"operation\": \"get_item\", \"path\": \"correct.path\" }"}}
+```
+
+### Update Component Props
+
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 34, "end_line": 38, "expected_text": "    \"chart\": {\n      \"component\": \"ChartCard\",\n      \"props\": { \"title\": \"Old Title\" }\n    }", "replacement_text": "    \"chart\": {\n      \"component\": \"ChartCard\",\n      \"props\": { \"title\": \"New Title\", \"type\": \"bar\" }\n    }"}}
+```
+
+---
+
+## Common Pitfalls
+
+1. **Clearing other fields**: Only update what needs to change—metadata fields are independent.
+
+2. **Breaking element references**: If you remove a UI element, remove its layout reference too.
+
+3. **Orphaned data sources**: Remove unused data sources to keep manifest clean.
+
+4. **Forgetting to validate JSON**: Check for syntax errors before saving.
+
+5. **Using patching for major rewrites**: Full replacement is cleaner for large structural changes.
+
+6. **Not verifying save succeeded**: Always check the tool result before confirming to user.
+
+7. **Editing wrong store path**: Use `applicationEditState.manifestJson` for edit modal, not `currentManifestJson`.

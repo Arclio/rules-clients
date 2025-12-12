@@ -1,0 +1,231 @@
+---
+description: "Operational Protocol: Using Applications. High-level guidance for the applications list page and navigating to specific application states."
+globs: []
+alwaysApply: false
+---
+
+# Protocol: Use Applications
+
+**Purpose:** Guide the user when on the applications list page, helping them navigate to the correct action.
+
+**Prerequisites:**
+- User is on `/applications` page (list view)
+- No modal is currently open
+
+---
+
+## State Machine Overview
+
+```
+LIST_VIEW → [CREATE | EDIT | VIEW | SHARE | DELETE]
+    ↑                                    │
+    └────────────────────────────────────┘ (return after action)
+```
+
+---
+
+## State: LIST_VIEW
+
+### Indicators
+- User is viewing the application gallery/list
+- No modal is open (`layer_type` is not "modal")
+- Applications are displayed as cards
+
+### Context Check
+```
+page_type: "applications_list"
+applications: [
+  { id: 42, name: "Efficacy Dashboard", version: "2.2.0" },
+  { id: 43, name: "Safety Monitor", version: "1.0.0" }
+]
+total_count: Number of applications
+elements: Available action buttons
+```
+
+### Goal
+Help the user navigate to their desired action.
+
+### Actions
+
+**For "Create a new application/dashboard":**
+
+Click the create button to open the create modal:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "create-application-btn"}}
+```
+→ Transitions to `/applications?create=true` (see `HOW_TO_CREATE_APPLICATION`)
+
+**For "Open/View [application name]":**
+
+1. Find application in `applications` list by name
+2. Click open button:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "open-application-{id}"}}
+```
+→ Navigates to `/applications/{id}` (see `HOW_TO_VIEW_APPLICATION`)
+
+**For "Edit [application name]":**
+
+1. Find application in `applications` list by name
+2. Click edit button:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-application-{id}"}}
+```
+→ Opens edit modal at `/applications?edit={id}` (see `HOW_TO_EDIT_APPLICATION`)
+
+**For "Share [application name]":**
+
+1. Find application in `applications` list
+2. Click share button:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "share-application-{id}"}}
+```
+→ Opens share modal (no special SOP needed)
+
+**For "Delete [application name]":**
+
+1. Find application in `applications` list
+2. Click delete button:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "delete-application-{id}"}}
+```
+→ Opens delete confirmation (no special SOP needed)
+
+### Transitions
+- User wants to create → **HOW_TO_CREATE_APPLICATION** protocol
+- User wants to view → **HOW_TO_VIEW_APPLICATION** protocol
+- User wants to edit → **HOW_TO_EDIT_APPLICATION** protocol
+- User wants to share/delete → Handle directly, return to **LIST_VIEW**
+
+---
+
+## Understanding Applications
+
+### What is an Application?
+
+An Application is a **schema-driven dashboard** defined by a JSON manifest containing:
+- **UI Elements**: Components like charts, tables, metrics
+- **Data Sources**: MCP tool invocations that fetch data
+- **Actions**: Workflow triggers or MCP tool calls
+- **Layout**: Nested structure with tabs, grids, stacks
+
+### What the Agent Receives
+
+**The agent does NOT receive:**
+- Raw table data (could be thousands of rows)
+- Full manifest JSON in every context update
+- Inactive tab contents
+
+**The agent DOES receive:**
+- Manifest summary (counts, structure)
+- Active tab context
+- Data source loading/error status
+- Available actions
+- Rendering errors
+- Patchable field metadata (for live editing)
+
+---
+
+## URL Patterns Reference
+
+| Route | State | Protocol |
+|-------|-------|----------|
+| `/applications` | List view | This protocol |
+| `/applications?create=true` | Create modal | `HOW_TO_CREATE_APPLICATION` |
+| `/applications?edit={id}` | Edit modal | `HOW_TO_EDIT_APPLICATION` |
+| `/applications?share={id}` | Share modal | (handled directly) |
+| `/applications?delete={id}` | Delete modal | (handled directly) |
+| `/applications/{id}` | Dashboard view | `HOW_TO_VIEW_APPLICATION` |
+| `/applications/{id}?tab={tabId}` | Dashboard with tab | `HOW_TO_VIEW_APPLICATION` |
+
+---
+
+## Element IDs Reference
+
+| Element | ID Pattern | Action |
+|---------|------------|--------|
+| Create button | `create-application-btn` | Opens create modal |
+| Open button | `open-application-{id}` | Navigates to dashboard |
+| Edit button | `edit-application-{id}` | Opens edit modal |
+| Share button | `share-application-{id}` | Opens share modal |
+| Delete button | `delete-application-{id}` | Opens delete confirmation |
+
+---
+
+## Store Paths Reference
+
+The `applications` store contains:
+
+| Path | Type | Description |
+|------|------|-------------|
+| `applicationCreationState` | object | Create modal form state |
+| `applicationEditState` | object | Edit modal form state |
+| `currentManifest` | object | Parsed manifest for rendering |
+| `currentManifestJson` | string | Editable JSON (view page) |
+| `hasUnsavedManifestChanges` | boolean | Pending view page changes |
+| `renderingErrors` | array | Component rendering failures |
+| `dataSourceStates` | object | Loading/error states per DS |
+
+**Patching paths:**
+- Create modal: `applicationCreationState.manifestJson`
+- Edit modal: `applicationEditState.manifestJson`
+- View page: `currentManifestJson`
+
+---
+
+## Common User Requests
+
+### "Show me my dashboards"
+
+You're on the right page. List the applications:
+```
+Here are your applications:
+
+1. **Efficacy Dashboard** (v2.2.0)
+2. **Safety Monitor** (v1.0.0)
+
+Would you like to open one, or create a new application?
+```
+
+### "Create a new dashboard for X"
+
+Click the create button and follow the create protocol:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "create-application-btn"}}
+```
+
+### "Open the efficacy dashboard"
+
+Find the ID and click open:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "open-application-42"}}
+```
+
+### "I need to modify the safety monitor"
+
+Find the ID and click edit:
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-application-43"}}
+```
+
+---
+
+## Related SOPs
+
+- **`HOW_TO_CREATE_APPLICATION`**: Creating new applications via the create modal
+- **`HOW_TO_EDIT_APPLICATION`**: Editing applications via the edit modal
+- **`HOW_TO_VIEW_APPLICATION`**: Viewing and live-editing dashboards
+
+---
+
+## Common Pitfalls
+
+1. **Wrong protocol for page state**: Check the URL to determine which SOP applies.
+
+2. **Assuming application IDs**: Always look up the ID from context, don't guess.
+
+3. **Using wrong element ID pattern**: Element IDs include the application ID.
+
+4. **Not finding the application**: If user gives a name, search the `applications` array.
+
+5. **Trying to edit from list**: Can only edit via modal or live edit on view page.

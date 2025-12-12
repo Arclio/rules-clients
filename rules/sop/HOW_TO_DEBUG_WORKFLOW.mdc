@@ -1,135 +1,424 @@
 ---
-description: "Standard Operating Procedure: Debugging a workflow. Tactical steps for the agent to follow when helping users troubleshoot workflow failures."
+description: "Operational Protocol: Interpreting workflow results. State-based guidance for understanding execution outcomes and debugging failures."
 globs: []
 alwaysApply: false
 ---
-## SOP: Debug Workflow
 
-**Context:** This rule is loaded when the user needs help debugging a failed workflow. The agent has access to execution logs and error details.
+# Protocol: Debug Workflow
 
-### Step 1: Identify the Failure
+**Purpose:** Help users understand workflow execution results and diagnose failures.
 
-**Ask the user:**
-- Which workflow failed?
-- Do they have a job ID or execution link?
-- What were they trying to do?
+**Prerequisites:**
+- User is on `/workflow-execute/:id?state=complete` page
+- Workflow execution has finished (success or failure)
+- Results are available in context
 
-**Check the context for:**
-- Execution state (should be `error` or show failed status)
-- Error message
-- Which step failed
-- Step execution data
+---
 
-### Step 2: Locate the Failed Step
+## State Machine Overview
 
-**In the execution data, find:**
-- Step number that failed
-- Step title/description
-- Tool being used (if applicable)
-- Error message
+```
+                    ┌─────────────┐
+                    │   ASSESS    │
+                    └──────┬──────┘
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+        ┌──────────┐              ┌──────────┐
+        │ SUCCESS  │              │ FAILURE  │
+        └────┬─────┘              └────┬─────┘
+             │                         │
+             ▼                         ▼
+        ┌──────────┐              ┌──────────┐
+        │ SUMMARIZE│              │ DIAGNOSE │
+        └────┬─────┘              └────┬─────┘
+             │                         │
+             │                         ▼
+             │                    ┌──────────┐
+             │                    │   FIX    │
+             │                    └────┬─────┘
+             │                         │
+             └────────────┬────────────┘
+                          ▼
+                    ┌──────────┐
+                    │ COMPLETE │
+                    └──────────┘
+```
 
-**Report to user:** "Step X (Title) failed with error: [message]"
+---
 
-### Step 3: Diagnose the Root Cause
+## State: ASSESS
 
-**Common failure patterns:**
+### Indicators
+- Workflow execution has completed
+- Need to determine if it succeeded or failed
+- Haven't yet analyzed the results
 
-**Pattern 1: Syntax Error**
-- Error mentions "invalid format", "parsing error", or "YAML"
-- **Cause:** Malformed `.wf.md` file
-- **Fix:** Check frontmatter syntax, step structure
-- **Reference:** `WORKFLOW_SYNTAX` rule
+### Context Check
+```
+page.full_path: Should contain "state=complete"
+execution_result: {
+  status: "success" | "failed",
+  steps: [...],
+  outputs: {...},  // if successful
+  error: {...}     // if failed
+}
+```
 
-**Pattern 2: Variable Not Found**
-- Error: "Variable 'X' not found" or "undefined reference"
-- **Cause:** Referencing an output that doesn't exist
-- **Fix:** Check step dependencies, ensure outputs are defined correctly
-- **Reference:** `WORKFLOW_PATTERNS` rule on scope isolation
+### Goal
+Determine the execution outcome to choose the appropriate path.
 
-**Pattern 3: Tool Execution Failed**
-- Error from specific tool (e.g., "github API error", "database connection failed")
-- **Cause:** Tool input was invalid OR external service failed
-- **Fix:** Check tool inputs, verify service is available
-- **Note:** May require retrying if it's a transient failure
+### Actions
 
-**Pattern 4: Type Mismatch**
-- Error: "Expected type 'X', got 'Y'"
-- **Cause:** Output extraction path doesn't match actual tool response
-- **Fix:** Use the Two-Step Pattern (extract as `any`, then parse with LLM)
-- **Reference:** `WORKFLOW_PATTERNS` rule
+**1. Check `execution_result.status`:**
 
-**Pattern 5: Empty Array Iteration**
-- Error during iterator step, often array index errors
-- **Cause:** Trying to iterate over an empty array
-- **Fix:** Add Guard-then-Iterate pattern (check array length first)
-- **Reference:** `WORKFLOW_PATTERNS` rule
+```
+if execution_result.status == "success":
+    → Go to SUCCESS state
+else:
+    → Go to FAILURE state
+```
 
-### Step 4: Propose a Fix
+### Transitions
+- Status is "success" → **SUCCESS**
+- Status is "failed" → **FAILURE**
 
-**Based on the diagnosis, suggest:**
+---
 
-1. **For syntax errors:** Show the corrected syntax
-2. **For variable errors:** Explain the scope issue and how to fix it
-3. **For tool errors:** Suggest checking inputs or retrying
-4. **For type errors:** Recommend the Two-Step Pattern
-5. **For iteration errors:** Recommend the Guard-then-Iterate pattern
+## State: SUCCESS
 
-**Offer to apply the fix if the user wants.**
+### Indicators
+- `execution_result.status` is "success"
+- Workflow completed without errors
+- Outputs are available
 
-### Step 5: Apply the Fix (if requested)
+### Context Check
+```
+execution_result.status: "success"
+execution_result.outputs: Final workflow outputs
+execution_result.steps: All steps with status "completed"
+```
 
-Navigate to the workflow edit page and make the correction:
-- Use `ui_navigate` to go to `/workflow-edit/:id`
-- Follow the Edit Workflow SOP to apply changes
-- Test the fix by re-executing
+### Goal
+Understand what the workflow produced.
 
-### Quick Diagnosis Checklist
+### Actions
 
-When you see an error, ask yourself:
+**1. Review outputs:**
+- Check `execution_result.outputs` for final results
+- Note the data types and structure
 
-- [ ] Is this a syntax/format error? → Check frontmatter and step structure
-- [ ] Is a variable missing? → Check if output exists and scope is valid
-- [ ] Did a tool fail? → Check tool inputs and external service status
-- [ ] Is there a type mismatch? → Check extraction path vs actual output
-- [ ] Is an array empty? → Check if iteration needs a guard
+**2. Review step execution:**
+- Check each step in `execution_result.steps`
+- Note duration and any intermediate outputs
 
-### Working with Execution Logs
+### Transitions
+- Outputs understood → **SUMMARIZE**
 
-**The execution data shows:**
-- Each step's status
-- Inputs sent to each tool
-- Outputs received from each tool
-- Timestamps and errors
+---
 
-**Use this to:**
-- Trace data flow through the workflow
-- See exactly what was sent to the failed tool
-- Verify earlier steps produced expected outputs
-- Identify where the data pipeline broke
+## State: FAILURE
 
-### When to Escalate
+### Indicators
+- `execution_result.status` is "failed"
+- One or more steps did not complete
+- Error information is available
 
-**Some issues require backend investigation:**
-- Tool server is completely unavailable (not just one request failing)
-- Database connection issues across all workflows
-- Permission/authentication errors that persist
-- Platform bugs or infrastructure outages
+### Context Check
+```
+execution_result.status: "failed"
+execution_result.steps: Array with at least one failed step
+execution_result.error: Top-level error info
+```
 
-**For these:**
-- Clearly explain it's a platform issue, not workflow syntax
-- Suggest checking `/monitoring` for system-wide issues
-- Recommend contacting support with the job ID
+### Goal
+Identify which step failed and why.
 
-### Common Pitfalls to Avoid
+### Actions
 
-1. **Don't guess at fixes** - Diagnose first, then propose a solution
-2. **Don't ignore the error message** - It usually points directly to the problem
-3. **Don't apply untested fixes** - Explain what you'll change and why
-4. **Don't confuse user error with platform issues** - Know the difference
-5. **Don't forget to reference the syntax rules** - Help users learn, not just fix
+**1. Find the failed step:**
 
-### After Fixing
+Look through `execution_result.steps` for:
+- `status: "failed"` or `status: "error"`
+- The `error` field with the message
+- The `step_id` and `title`
 
-- Re-execute the workflow to verify the fix
-- Explain what was wrong and what you changed
-- Suggest best practices to avoid similar issues (e.g., always use Guard-then-Iterate)
+**2. Extract error details:**
+
+```
+Step [N] ([title]) failed with error: [error message]
+```
+
+### Transitions
+- Failed step identified → **DIAGNOSE**
+
+---
+
+## State: DIAGNOSE
+
+### Indicators
+- Failed step is identified
+- Need to determine root cause
+- Error message is available
+
+### Context Check
+- Error message from failed step
+- Step inputs and configuration
+- Previous step outputs (if applicable)
+
+### Goal
+Determine the root cause of the failure.
+
+### Actions
+
+**1. Categorize the error:**
+
+| Error Pattern | Category | Likely Cause |
+|--------------|----------|--------------|
+| "Invalid format", "parsing error", "YAML" | **Syntax** | Malformed workflow definition |
+| "Variable 'X' not found", "undefined" | **Reference** | Dangling variable reference |
+| "API error", "connection failed", "timeout" | **Tool** | External service or input issue |
+| "Expected type 'X', got 'Y'" | **Type** | Output structure mismatch |
+| "Missing parameter", "Invalid parameter" | **Parameter** | Workflow parameter issue |
+| "Permission denied", "unauthorized" | **Auth** | Credentials or access issue |
+
+**2. Explain the diagnosis:**
+
+```
+📍 **Diagnosis:** [Category] Error
+
+**What happened:**
+Step [N] ([title]) failed because [clear explanation].
+
+**Root cause:**
+[Specific cause based on error pattern]
+```
+
+### Transitions
+- Diagnosis complete → **FIX**
+
+---
+
+## State: FIX
+
+### Indicators
+- Root cause is understood
+- Need to recommend a fix
+- User needs guidance on next steps
+
+### Context Check
+- Diagnosis from previous state
+- Available actions in context
+- Whether fix requires workflow edit or just re-run
+
+### Goal
+Propose a concrete fix for the failure.
+
+### Actions
+
+**1. Determine fix type:**
+
+| Category | Fix Type | Action |
+|----------|----------|--------|
+| **Syntax** | Edit workflow | Navigate to edit page |
+| **Reference** | Edit workflow | Fix variable names |
+| **Tool** | Re-run or Edit | Check inputs, retry, or fix params |
+| **Type** | Edit workflow | Fix extraction paths |
+| **Parameter** | Re-run | Use correct parameter values |
+| **Auth** | Configure | Check credentials/permissions |
+
+**2. For Re-run fixes:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "rerun-workflow-btn"}}
+```
+
+Or suggest the user try again with different parameters.
+
+**3. For Edit fixes:**
+
+```
+This issue requires editing the workflow definition.
+Would you like me to navigate to the edit page and fix [specific issue]?
+```
+
+If user confirms:
+```
+TOOL_CALL: {"name": "ui_navigate", "parameters": {"url": "/workflow-edit/{workflow_id}"}}
+```
+
+Then follow `HOW_TO_EDIT_WORKFLOW` protocol.
+
+**4. For transient failures:**
+
+If the error seems temporary (timeout, rate limit):
+- Suggest a simple retry
+- No workflow changes needed
+
+### Transitions
+- Fix requires re-run → Execute action, go to **COMPLETE**
+- Fix requires edit → Navigate to edit page (ends this protocol)
+- User declines fix → **COMPLETE**
+
+---
+
+## State: SUMMARIZE
+
+### Indicators
+- Workflow succeeded
+- Outputs are understood
+- Need to present results to user
+
+### Context Check
+```
+execution_result.outputs: Final results
+execution_result.steps: Execution timeline
+```
+
+### Goal
+Present the results clearly to the user.
+
+### Actions
+
+**1. Format results based on type:**
+
+**For data/text outputs:**
+```
+✅ **Workflow completed successfully!**
+
+**Results:**
+[Format data in readable way - tables, lists, or plain text as appropriate]
+
+**Execution time:** [started_at to completed_at]
+**Steps completed:** [count]
+```
+
+**For file outputs:**
+```
+✅ **Workflow completed successfully!**
+
+**Output files generated:**
+- [file name] - [description]
+
+These are available for download using the button below.
+```
+
+**For multiple items:**
+```
+✅ **Workflow completed successfully!**
+
+**Processed [N] items:**
+1. [item 1 summary]
+2. [item 2 summary]
+...
+```
+
+### Transitions
+- Summary complete → **COMPLETE**
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- Results have been presented (success or failure handled)
+- User has received all relevant information
+- Ready for next action
+
+### Context Check
+```
+elements: Available actions (download, rerun, etc.)
+```
+
+### Goal
+Offer logical next actions to the user.
+
+### Actions
+
+**1. List available actions:**
+
+Look in context for available actions:
+- `download_results` - Download output files
+- `start_new_run` - Run again with same/different parameters
+- `return_to_application` - Go back (if launched from an app)
+- `edit_workflow` - Navigate to edit page
+
+**2. Suggest appropriate next step:**
+
+For success:
+```
+**What would you like to do next?**
+- Download the results
+- Run again with different parameters
+- Make modifications to the workflow
+```
+
+For failure (after fix):
+```
+Would you like to:
+- Try running the workflow again
+- Make changes to the workflow
+- Do something else
+```
+
+---
+
+## Reference: Error Message Patterns
+
+### Syntax Errors
+```
+"YAML parsing error at line 15"
+"Invalid frontmatter: missing 'version' field"
+"Step 3 missing required field: **Tool:**"
+```
+**Fix:** Edit workflow to correct syntax
+
+### Variable Errors
+```
+"Variable 'step2.data' not found"
+"Cannot resolve reference: ${unknown.field}"
+"Step 4 references undefined output"
+```
+**Fix:** Check step outputs, fix variable names
+
+### Tool Errors
+```
+"Tool 'mcp_server_tool' not found"
+"API error: 429 Too Many Requests"
+"Connection timeout after 30s"
+```
+**Fix:** Verify tool name, check service, retry
+
+### Type Errors
+```
+"Expected array, got object at $.results"
+"Cannot extract string from null"
+"Type mismatch: expected number"
+```
+**Fix:** Verify tool response structure, fix extraction path
+
+### Parameter Errors
+```
+"Missing required parameter: email"
+"Invalid value for 'limit': expected number"
+"Parameter 'date' format invalid"
+```
+**Fix:** Re-run with correct parameters
+
+---
+
+## Common Pitfalls
+
+1. **Guessing at fixes**: Always read the error message first—it tells you what's wrong.
+
+2. **Ignoring error details**: The error message often contains the exact issue and location.
+
+3. **Assuming user error**: Could be a transient failure—check before suggesting edits.
+
+4. **Editing for parameter issues**: If parameters were wrong, just re-run—no edit needed.
+
+5. **Losing context**: Reference specific step IDs and error messages in explanations.
+
+6. **Not offering next actions**: Always give the user clear options for what to do next.
+
+7. **Suggesting edits for auth issues**: Authentication problems need credential setup, not workflow edits.

@@ -1,223 +1,241 @@
 ---
-description: "SOP: Adding an MCP Server. Tactical steps when helping users add a new MCP server template."
+description: "Operational Protocol: Adding an MCP Server template. State-based guidance for helping users add new MCP server templates to the platform."
 globs: []
 alwaysApply: false
 ---
 
-## SOP: Add MCP Server
+# Protocol: Add MCP Server
 
-**Context:** User wants to add an MCP server connection (e.g., "Add Salesforce MCP server").
+**Purpose:** Guide the user through adding a new MCP server template to the platform.
 
-**Goal:** Search multiple sources, present options as a table, let user choose, then fetch docs and create the server.
+**Prerequisites:**
+- User is on `/features` page or navigable to it
+- User has identified a service they want to connect (e.g., "Salesforce", "Notion", "Vapi")
 
 ---
 
-### Step 1: Comprehensive Search for MCP Servers
+## State Machine Overview
 
-**Sources to Search (use your judgment for which are most relevant):**
-1. **GitHub** - Primary source for code repositories
-2. **MCP Registry** (`mcpservers.org` or official MCP registry)
-3. **npm** - For Node.js packages
-4. **PyPI** - For Python packages
-5. **Community lists** - awesome-mcp-servers and similar curated lists
-
-**Tool:** `brave-search__brave_web_search`
-
-**Search Strategy:**
-Execute 1-2 searches across the most relevant sources:
-
-```json
-{
-  "name": "brave-search__brave_web_search",
-  "parameters": {
-    "query": "\"[SERVICE_NAME] MCP server\" site:github.com OR site:mcpservers.org OR site:npmjs.com"
-  }
-}
+```
+DISCOVERY → SELECTION → DOCUMENTATION → FORM_FILL → VARIABLES → SAVE → COMPLETE
+    ↑           │              │
+    └───────────┴──────────────┘ (can return if issues found)
 ```
 
-**Extract key information for each server:**
+---
+
+## State: DISCOVERY
+
+### Indicators
+- User has mentioned a service name they want to connect
+- No server template exists for this service yet (or user wants alternatives)
+- You don't yet know what MCP server implementations are available
+
+### Context Check
+- Verify current page via `page.full_path`
+- Check `data.servers` to see if template already exists
+
+### Goal
+Find suitable MCP server implementations for the requested service.
+
+### Actions
+
+**1. Check for available search tools:**
+
+Before searching, verify you have search capability:
+```
+TOOL_CALL: {"name": "list_mcp_connections", "parameters": {}}
+```
+
+Look for search-capable servers in the response:
+- `brave-search` → Use `brave-search__brave_web_search`
+- `exa` → Use `exa__web_search_exa`
+- Other search tools as available
+
+**2. If search tool available, execute search:**
+
+```
+TOOL_CALL: {"name": "brave-search__brave_web_search", "parameters": {"query": "\"[SERVICE_NAME] MCP server\" site:github.com OR site:npmjs.com OR site:mcpservers.org"}}
+```
+
+**3. If NO search tool available:**
+
+Do NOT attempt to call search tools that don't exist. Instead, inform the user:
+
+```
+I don't currently have access to a web search tool to find MCP server implementations.
+
+**Options:**
+1. You can connect a search integration (like Brave Search or Exa) in Settings > Integrations
+2. You can provide me with a GitHub repository URL or npm package name for the MCP server you want to add
+3. If you have documentation for the server, you can share the relevant details
+
+Which would you prefer?
+```
+
+### Transitions
+- Search results found → **SELECTION**
+- No search tool available → Wait for user input, then **DOCUMENTATION** (if they provide URL) or remain in **DISCOVERY**
+- User provides direct link → **DOCUMENTATION**
+
+---
+
+## State: SELECTION
+
+### Indicators
+- Search results are available
+- Multiple MCP server options exist
+- User has not yet chosen which one to use
+
+### Goal
+Present options clearly and help user make informed choice.
+
+### Actions
+
+**1. Extract key information from search results:**
 - Repository/package name
-- Stars/downloads (popularity metric)
+- Popularity indicators (stars, downloads)
 - Last updated date
 - Installation method (uvx, npx, docker)
-- Authentication type (API key, OAuth, credentials)
+- Authentication type
 
-**Present Results as a MARKDOWN TABLE:**
+**2. Present as comparison table:**
 
 ```markdown
 🔍 **Found [N] MCP servers for [Service]:**
 
-| # | Name | Stars | Updated | Installation | Auth Type |
-|---|------|-------|---------|--------------|-----------|
+| # | Name | Stars | Updated | Install | Auth Type |
+|---|------|-------|---------|---------|-----------|
 | 1 | owner/repo-name | ⭐ 234 | 2024-11 | `npx` | API Key |
 | 2 | owner/alternative | ⭐ 45 | 2024-10 | `uvx` | OAuth |
-| 3 | owner/another-option | ⭐ 12 | 2024-12 | `docker` | Credentials |
 
-**My recommendation:** Option #1 (most stars, recently updated, simple auth)
+**My recommendation:** Option #1 (most popular, recently maintained, simpler auth)
 
-Which one would you like to install? (Reply with the number)
+Which would you like to install? (Reply with the number or name)
 ```
 
-**Wait for user confirmation before proceeding.**
+**3. Wait for user selection** - Do NOT proceed without explicit choice.
+
+### Transitions
+- User selects option → **DOCUMENTATION**
+- User wants different search → **DISCOVERY**
+- User provides their own URL → **DOCUMENTATION**
 
 ---
 
-### Step 2: Fetch Documentation
+## State: DOCUMENTATION
 
-**Tool:** `brave-search__brave_web_search`
+### Indicators
+- A specific MCP server has been selected
+- You need installation and configuration details
+- You don't yet have the command, args, and environment variables
 
-**Multiple fallback strategies:**
+### Goal
+Gather complete configuration information for the selected server.
 
-1. **Try raw GitHub README:**
-   ```json
-   {
-     "query": "site:raw.githubusercontent.com \"[OWNER]/[REPO]\" README"
-   }
-   ```
+### Actions
 
-2. **If that fails, try GitHub repo page:**
-   ```json
-   {
-     "query": "[OWNER]/[REPO] site:github.com README installation"
-   }
-   ```
+**1. Fetch documentation:**
 
-3. **If that fails, try package registry:**
-   ```json
-   {
-     "query": "[package-name] site:npmjs.com OR site:pypi.org installation configuration"
-   }
-   ```
+If you have a search tool, search for the README:
+```
+TOOL_CALL: {"name": "brave-search__brave_web_search", "parameters": {"query": "[OWNER]/[REPO] README installation environment variables configuration"}}
+```
 
-**Extract from Documentation:**
-- Installation command (uvx, npx, or docker)
-- Environment variables and their purpose
-- Which variables are secrets vs configuration
-- Example configuration if available
+Alternative queries if first doesn't yield results:
+- `"[package-name]" npm installation configuration`
+- `"[OWNER]/[REPO]" github mcp server setup`
 
-**If no documentation found:**
-- communicate with the user that the documentation was not found and ask them to provide the documentation or try a different server.
+**2. Extract required information:**
+
+From the documentation, identify:
+- **Command**: `npx`, `uvx`, or `docker`
+- **Args**: Package name and any required arguments
+- **Environment variables**: What credentials/config the server needs
+- **Which variables are secrets** (API keys, tokens, passwords)
+
+**3. If documentation is insufficient:**
+
+```
+I found the repository but couldn't extract complete configuration details.
+
+**What I found:**
+- Package: [name]
+- Install method: [npx/uvx/docker]
+
+**What I'm missing:**
+- [List missing items]
+
+Could you check the README at [URL] and let me know:
+1. What environment variables are required?
+2. Which ones are secrets (API keys, tokens)?
+```
+
+### Transitions
+- All configuration details gathered → **FORM_FILL**
+- Documentation incomplete → Wait for user input
+- Wrong server chosen → **SELECTION** or **DISCOVERY**
 
 ---
 
-### Step 3: Fill the Add Server Form
+## State: FORM_FILL
 
-**Tool:** `ui_fill_state`
+### Indicators
+- You have all configuration information
+- Need to populate the add server form
+- Current route should be `/features?action=add-server` (or you need to navigate there)
 
-**Store:** `mcp`
-**Path:** `addServerForm`
-
-⚠️ **IMPORTANT: You MUST fill ALL of these fields in a single ui_fill_state call:**
-- `name` - Server identifier (required)
-- `display_name` - Human-readable name (required)
-- `description` - What the server does (required)
-- `config_template_json` - MCP server configuration (required)
-- `variable_schema_json` - Variable definitions (required)
-- `ui_schema_json` - Form UI definition (required - DO NOT leave as `{}`)
-- `oauth_enabled` - OAuth flag (required)
-
-**Form Structure:**
-
-```json
-{
-  "store_id": "mcp",
-  "updates": {
-    "addServerForm": {
-      "name": "service_name_mcp",
-      "display_name": "Service Name",
-      "description": "Brief description of what this server does",
-      "config_template_json": "{\"mcpServers\":{\"service_key\":{\"command\":\"uvx|npx|docker\",\"args\":[...],\"env\":{\"VAR_NAME\":\"{{placeholder}}\"}}}}",
-      "variable_schema_json": "{\"required\":[...],\"properties\":{...}}",
-      "ui_schema_json": "{\"sections\":[{\"title\":\"...\",\"type\":\"password|text\",\"field\":\"...\"}]}",
-      "oauth_enabled": false
-    }
-  }
-}
+### Context Check
+```
+page.full_path: Should be "/features?action=add-server"
+data.addServerForm: Shows current form state
+elements: Should include form-related elements
 ```
 
-**Critical Notes:**
-- Always set `oauth_enabled` to `false` for API key/credentials servers.
-- **NEVER leave `ui_schema_json` as `"{}"` or empty** - always define sections for each variable so users have a proper form to fill out.
+### Goal
+Populate ALL required form fields in a single `ui_fill_state` call.
 
-**Field Construction:**
+### Actions
 
-**1. `name`** (lowercase_snake_case, no spaces):
-```
-salesforce_mcp
-github_integration
-```
+**1. Navigate to add server form (if not already there):**
 
-**2. `config_template_json`** (JSON string, escaped):
+Check `page.full_path`. If not on `/features?action=add-server`:
+- If on `/features`, look for add button in `elements` and click it
+- If elsewhere, navigate to `/features` first
 
-**Example 1 - Simple (Brave Search):**
+**2. Prepare complete form data:**
+
+All fields must be provided together:
+
+| Field | Description | Format |
+|-------|-------------|--------|
+| `name` | Internal identifier | `lowercase_snake_case` (e.g., `salesforce_mcp`) |
+| `display_name` | User-friendly name | Title case (e.g., `Salesforce`) |
+| `description` | What the server does | Brief description |
+| `config_template_json` | MCP server configuration | Escaped JSON string |
+| `variable_schema_json` | Variable definitions | Escaped JSON string |
+| `ui_schema_json` | Form field definitions | Escaped JSON string (NEVER empty `"{}"`) |
+| `oauth_enabled` | OAuth flag | `false` for API key auth |
+
+**3. Build the configuration JSON structures:**
+
+**config_template_json example:**
 ```json
 {
   "mcpServers": {
-    "brave-search": {
+    "server_key": {
       "command": "npx",
-      "args": ["-y", "@brave/brave-search-mcp-server"],
+      "args": ["-y", "@package/name"],
       "env": {
-        "BRAVE_API_KEY": "{{brave_api_key}}"
+        "API_KEY": "{{api_key}}",
+        "BASE_URL": "{{base_url}}"
       }
     }
   }
 }
 ```
 
-**Example 2 - With Args (Supabase):**
-```json
-{
-  "mcpServers": {
-    "supabase": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@supabase/mcp-server-supabase@latest",
-        "--project-ref={{project_ref}}"
-      ],
-      "env": {
-        "SUPABASE_ACCESS_TOKEN": "{{supabase_access_token}}"
-      }
-    }
-  }
-}
-```
-
-**Example 3 - uvx with Version (Google Workspace):**
-```json
-{
-  "mcpServers": {
-    "google_workspace": {
-      "command": "uvx",
-      "args": [
-        "--from",
-        "google-workspace-mcp==2.0.1",
-        "google-workspace-worker"
-      ],
-      "env": {
-        "GOOGLE_WORKSPACE_CLIENT_ID": "{{gsuite_client_id}}",
-        "GOOGLE_WORKSPACE_CLIENT_SECRET": "{{gsuite_client_secret}}",
-        "GOOGLE_WORKSPACE_REFRESH_TOKEN": "{{gsuite_refresh_token}}",
-        "GOOGLE_WORKSPACE_ENABLED_CAPABILITIES": "{{enabled_capabilities}}"
-      }
-    }
-  }
-}
-```
-
-**Commands:**
-- `npx` - Run Node.js packages
-- `uvx` - Run Python packages (uv)
-- `docker` - Run Docker containers
-
-**Placeholders:** Use `{{lowercase_snake_case}}`
-**Env Variables:** Use `UPPERCASE_SNAKE_CASE`
-
-**When escaping for JSON string:**
-- `\"` for quotes
-- `\\n` for newlines (if needed)
-
-**3. `variable_schema_json`** (JSON string, escaped):
+**variable_schema_json example:**
 ```json
 {
   "required": ["api_key"],
@@ -231,204 +249,244 @@ github_integration
     "base_url": {
       "type": "string",
       "title": "Base URL",
-      "description": "Service endpoint URL",
+      "description": "API endpoint URL",
       "secret": false,
-      "default": "https://api.service.com"
+      "default": "https://api.example.com"
     }
   }
 }
 ```
 
-Secret classification:
-- `true`: API keys, tokens, passwords, OAuth secrets
-- `false`: URLs, paths, usernames, flags, ports
-
-**4. `ui_schema_json`** (JSON string - **REQUIRED, do not leave empty**):
-
-⚠️ **Always provide a proper ui_schema** that defines form sections for each variable. This determines how users will input their credentials. An empty `{}` will result in no form fields being shown.
-
-**Example 1 - Simple (Brave Search):**
+**ui_schema_json example:**
 ```json
 {
   "sections": [
     {
-      "title": "API Configuration",
+      "title": "API Key",
       "type": "password",
-      "field": "brave_api_key"
-    }
-  ]
-}
-```
-
-**Example 2 - With Optional Fields (Supabase):**
-```json
-{
-  "sections": [
-    {
-      "title": "Supabase Access Token",
-      "type": "password",
-      "field": "supabase_access_token",
-      "placeholder": "sbp_xxx",
+      "field": "api_key",
       "required": true,
-      "helpText": "Personal access token from your Supabase Dashboard"
+      "helpText": "Find this in your account settings"
     },
     {
-      "title": "Project Reference",
+      "title": "Base URL",
       "type": "text",
-      "field": "project_ref",
-      "placeholder": "your-project-ref",
-      "required": true,
-      "helpText": "Your Supabase project ref (e.g., abcdefghijklmnop)"
+      "field": "base_url",
+      "placeholder": "https://api.example.com"
     }
   ]
 }
 ```
 
-**Supported Section Types:**
-- `password` - Masked input for secrets
-- `text` - Plain text input
-- `textarea` - Multi-line input
-- `checkbox` - Multiple selection with `options` array
-- `instructions` - Static help text (no `field` needed)
+**4. Execute form fill:**
 
-**Optional Fields:**
-- `placeholder` - Input placeholder text
-- `required` - Boolean, marks field as required
-- `helpText` - Description shown below field
-- `options` - Array of `{label, value}` for checkbox type
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "mcp", "updates": {"addServerForm": {"name": "...", "display_name": "...", "description": "...", "config_template_json": "...", "variable_schema_json": "...", "ui_schema_json": "...", "oauth_enabled": false}}}}
+```
 
-**Critical:** `field` must match `variable_schema.properties` keys
+**5. Verify in next context:**
+- Check `data.addServerForm` shows populated values
+- All fields should match what you submitted
 
-**5. `oauth_enabled`:**
-- `false` for API key/credentials
-- `true` for Google/Discord OAuth
+### Critical Rules
+
+**Placeholder format:** Use `{{snake_case}}` (double curly braces)
+
+**Secret classification:**
+- `true`: API keys, tokens, passwords, OAuth secrets, private keys
+- `false`: URLs, paths, usernames, feature flags, ports, regions
+
+**Field consistency:** Every `{{placeholder}}` in config_template must have:
+- A matching property in `variable_schema_json`
+- A matching section in `ui_schema_json`
+
+**ui_schema_json must NOT be empty:** Always define sections for each variable, or users won't see form fields.
+
+### Transitions
+- Form verified populated → **VARIABLES**
+- Form fill failed → Check error, fix data, retry once
+- Repeated failure → Return to user with status
 
 ---
 
-### Step 4: Proceed to Variables Tab
+## State: VARIABLES
 
-**Tool:** `ui_trigger_click`
+### Indicators
+- Form is populated with all fields
+- Variables have not yet been detected
+- The "Detect Variables" button should be available
 
+### Context Check
+```
+elements: Should include "detect-variables-btn" or similar
+data.addServerForm: Should show populated config_template_json
+```
+
+### Goal
+Trigger variable detection from the config template.
+
+### Actions
+
+**1. Verify element exists:**
+
+Check `elements` array for the detect variables button. Look for `id` containing "detect" or "variables".
+
+**2. Click detect variables:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "detect-variables-btn"}}
+```
+
+**3. Verify in next context:**
+- Variables should now be parsed from `{{placeholder}}` patterns
+- The form should show detected variables or the variables tab should be populated
+
+### Transitions
+- Variables detected successfully → **SAVE**
+- Detection failed → Check config_template_json format, return to **FORM_FILL**
+
+---
+
+## State: SAVE
+
+### Indicators
+- Form is complete
+- Variables are detected
+- Ready to create the server template
+
+### Context Check
+```
+elements: Should include save/submit button
+data.addServerForm: Should be fully populated
+```
+
+### Goal
+Save the server template and verify success.
+
+### Actions
+
+**1. Verify element exists:**
+
+Check `elements` array for submit button. Look for `id` containing "submit", "save", or "add-server".
+
+**2. Click save:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "add-server-submit-btn"}}
+```
+
+**3. Verify result:**
+
+Check the tool result:
+- `success: true` → Proceed to verify context change
+- `success: false` → Read error message completely
+
+**4. Verify context change:**
+
+After successful save, context should show:
+- Navigation away from add form, OR
+- New server appears in `data.servers` list, OR
+- Modal closed
+
+### Error Handling
+
+**Common errors and fixes:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Invalid JSON" | Malformed config_template or variable_schema | Check JSON escaping, validate structure |
+| "Duplicate name" | Server with this name exists | Change `name` field to unique value |
+| "Missing required field" | Form field empty | Return to FORM_FILL, add missing field |
+| "Invalid variable schema" | Mismatch between template and schema | Ensure all placeholders have schema entries |
+
+### Transitions
+- Save successful (verified) → **COMPLETE**
+- Save failed with fixable error → Return to **FORM_FILL**
+- Save failed with unclear error → Return to user with status
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- Server template has been created
+- Context shows the new server in the list or on a confirmation view
+
+### Actions
+
+**1. Confirm success to user:**
+
+```
+✅ **Server template created successfully!**
+
+**Server:** [display_name]
+**Variables configured:** [list of variables]
+
+**Next steps:**
+- To use this server, you'll need to configure it with your credentials
+- Would you like me to help you configure it now?
+```
+
+**2. Offer logical next action:**
+- Configure with credentials → Leads to HOW_TO_CONFIGURE protocol
+- Create another server → Return to DISCOVERY
+- Use in workflow → Navigate to workflow creation
+
+---
+
+## Reference: JSON Structure Templates
+
+### Command Types
+
+**npx (Node.js packages):**
 ```json
 {
-  "name": "ui_trigger_click",
-  "parameters": {
-    "element_id": "detect-variables-btn"
-  }
+  "command": "npx",
+  "args": ["-y", "@scope/package-name"],
+  "env": {...}
 }
 ```
 
-System will parse `config_template_json` and extract `{{placeholder}}` variables.
-
----
-
-### Step 5: Save the Server
-
-**Tool:** `ui_trigger_click`
-
+**uvx (Python packages):**
 ```json
 {
-  "name": "ui_trigger_click",
-  "parameters": {
-    "element_id": "add-server-submit-btn"
-  }
+  "command": "uvx",
+  "args": ["--from", "package-name==1.0.0", "entry-point"],
+  "env": {...}
 }
 ```
 
-**Handle the result:**
+**docker:**
+```json
+{
+  "command": "docker",
+  "args": ["run", "-i", "--rm", "-e", "VAR={{var}}", "image:tag"],
+  "env": {}
+}
+```
 
-- **Success (`success: true`):**
-  ```
-  ✅ Server template created!
+### UI Schema Section Types
 
-  Next: Configure with your credentials.
-  Would you like me to help configure it now?
-  ```
-
-- **Error (`success: false`):**
-  - Read error message
-  - Fix issue (JSON syntax, missing fields, duplicate name)
-  - Return to Step 3 and retry
+| Type | Use For | Additional Properties |
+|------|---------|----------------------|
+| `password` | Secrets, API keys | Masked input |
+| `text` | Plain text values | `placeholder` optional |
+| `textarea` | Multi-line text | For longer content |
+| `checkbox` | Multiple selections | Requires `options` array |
+| `instructions` | Help text only | No `field` needed |
 
 ---
 
-### Common Pitfalls
+## Common Pitfalls
 
-1. **Tool format:** `brave-search__brave_web_search` not `brave_web_search`
+1. **Empty ui_schema_json**: Results in no form fields shown to users. Always define sections.
 
-2. **JSON escaping:**
-   - ❌ `"config_template_json": "{"mcpServers": {...}}"`
-   - ✅ `"config_template_json": "{\"mcpServers\": {...}}"`
+2. **Placeholder mismatch**: `{{api_key}}` in template but `apiKey` in schema. Use consistent snake_case.
 
-3. **Field mismatch:** `ui_schema.field` must match `variable_schema.properties` keys
+3. **Missing secret flag**: API keys without `"secret": true` won't be encrypted.
 
-4. **Placeholder format:** `{{snake_case}}` not `${var}` or `{var}`
+4. **Wrong command for package type**: npm packages use `npx`, Python packages use `uvx`.
 
-5. **Search failures:** If docs not found, proceed with best guess based on package name
+5. **Assuming search tool exists**: Always check `list_mcp_connections` first.
 
-6. **Missing ui_schema:**
-   - ❌ `"ui_schema_json": "{}"` - Users won't see any form fields!
-   - ✅ Always define sections for each variable with proper `field`, `type`, and `title`
-
----
-
-### Example: Complete Flow
-
-**User:** "Add Salesforce MCP server"
-
-**Step 1: Multi-source search**
-```json
-brave-search__brave_web_search({
-  "query": "\"Salesforce MCP server\" site:github.com OR site:mcpservers.org"
-})
-```
-
-Present table:
-```markdown
-| # | Name | Stars | Updated | Installation | Auth |
-|---|------|-------|---------|--------------|------|
-| 1 | tsmztech/mcp-server-salesforce | ⭐ 45 | 2024-11 | `npx` | Credentials |
-| 2 | luvl/salesforce-lite | ⭐ 12 | 2024-10 | `uvx` | API Key |
-
-**Recommendation:** #1 (more comprehensive)
-Which one?
-```
-
-**Step 2: User chooses #1, fetch docs**
-```json
-brave-search__brave_web_search({
-  "query": "tsmztech mcp-server-salesforce installation configuration environment variables"
-})
-```
-
-**Step 3: Fill form**
-```json
-ui_fill_state({
-  "store_id": "mcp",
-  "updates": {
-    "addServerForm": {
-      "name": "salesforce_mcp",
-      "display_name": "Salesforce",
-      "description": "Salesforce CRM integration",
-      "config_template_json": "{\"mcpServers\":{\"salesforce\":{\"command\":\"npx\",\"args\":[\"-y\",\"@tsmztech/mcp-server-salesforce\"],\"env\":{\"SALESFORCE_USERNAME\":\"{{salesforce_username}}\",\"SALESFORCE_PASSWORD\":\"{{salesforce_password}}\",\"SALESFORCE_SECURITY_TOKEN\":\"{{salesforce_security_token}}\"}}}}",
-      "variable_schema_json": "{\"required\":[\"salesforce_username\",\"salesforce_password\",\"salesforce_security_token\"],\"properties\":{\"salesforce_username\":{\"type\":\"string\",\"title\":\"Username\",\"secret\":false},\"salesforce_password\":{\"type\":\"string\",\"title\":\"Password\",\"secret\":true},\"salesforce_security_token\":{\"type\":\"string\",\"title\":\"Security Token\",\"secret\":true}}}",
-      "ui_schema_json": "{\"sections\":[{\"title\":\"Username\",\"type\":\"text\",\"field\":\"salesforce_username\"},{\"title\":\"Password\",\"type\":\"password\",\"field\":\"salesforce_password\"},{\"title\":\"Security Token\",\"type\":\"password\",\"field\":\"salesforce_security_token\"}]}",
-      "oauth_enabled": false
-    }
-  }
-})
-```
-
-**Step 4: Proceed**
-```json
-ui_trigger_click({"element_id": "detect-variables-btn"})
-```
-
-**Step 5: Save**
-```json
-ui_trigger_click({"element_id": "add-server-submit-btn"})
-```
-
----
-
-*End of SOP*
+6. **Proceeding without user selection**: In SELECTION state, wait for explicit choice.

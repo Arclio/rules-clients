@@ -1,0 +1,444 @@
+---
+description: "Operational Protocol: Creating an application. State-based guidance for helping users create new applications via the create modal."
+globs: []
+alwaysApply: false
+---
+
+# Protocol: Create Application
+
+**Purpose:** Guide the user through creating a new schema-driven dashboard application.
+
+**Prerequisites:**
+- User is on `/applications?create=true` (create modal is open)
+- User has identified what they want the application to display
+
+---
+
+## State Machine Overview
+
+```
+UNDERSTAND → DESIGN → FORM_FILL → VALIDATE → SAVE → COMPLETE
+    ↑           │          │
+    └───────────┴──────────┘ (can return if issues found)
+```
+
+---
+
+## State: UNDERSTAND
+
+### Indicators
+- User has requested a new application/dashboard
+- The specific requirements are not yet fully understood
+- You don't know what data, components, or actions are needed
+
+### Context Check
+- Verify modal is open via `layer_type: "modal"`
+- Check `modal_id: "create-application-modal"`
+
+### Goal
+Clarify the user's requirements before designing the application.
+
+### Actions
+
+**1. Ask clarifying questions if needed:**
+- What is the purpose of this application/dashboard?
+- What data should be displayed (tables, charts, metrics)?
+- What actions should users be able to trigger?
+- Are there existing workflows or MCP tools to integrate?
+
+**2. Summarize understanding:**
+
+```
+I understand you want to create a dashboard that:
+- Displays: [data types]
+- Components: [chart, table, metrics, etc.]
+- Actions: [workflow triggers, etc.]
+
+Is that correct?
+```
+
+### Transitions
+- User confirms understanding → **DESIGN**
+- User provides more requirements → Remain in **UNDERSTAND**
+- Requirements are already clear → **DESIGN**
+
+---
+
+## State: DESIGN
+
+### Indicators
+- Requirements are understood
+- Need to plan the manifest structure
+- Haven't yet designed the layout and components
+
+### Context Check
+- Reference `APPLICATION_SYNTAX` for manifest schema
+- Reference `APPLICATION_COMPONENTS` for available components
+- Check available MCP tools for data sources
+
+### Goal
+Design the application manifest structure before writing JSON.
+
+### Actions
+
+**1. Identify data sources:**
+- Which MCP tools will provide data?
+- What transformations are needed?
+- Which tools return tabular data (for DataTable)?
+- Which return single values (for MetricCard)?
+
+**2. Plan the component layout:**
+
+| Data Type | Component | Props Needed |
+|-----------|-----------|--------------|
+| Single value | MetricCard | title, data_source_id |
+| Table data | DataTable | data_source_id, columns |
+| Time series | ChartCard | title, type, data_source_id |
+| Navigation | Tabs | tabs array with content |
+
+**3. Design layout structure:**
+
+```
+Layout options:
+- vstack: Vertical stack
+- hstack: Horizontal stack
+- grid: Grid layout
+- tabs: Tabbed navigation
+```
+
+**4. Plan actions (if needed):**
+- Workflow triggers: `{"type": "trigger_workflow", "workflow_id": 123}`
+- MCP tool calls: `{"type": "mcp_tool", "tool_name": "..."}`
+
+### Transitions
+- Design complete → **FORM_FILL**
+- Need to verify MCP tool availability → Query tools, then continue
+- Design unclear → Return to **UNDERSTAND**
+
+---
+
+## State: FORM_FILL
+
+### Indicators
+- Application design is ready
+- Need to populate the create form
+- Modal should be showing the create form
+
+### Context Check
+```
+layer_type: "modal"
+modal_id: "create-application-modal"
+form_data: { name: "", description: "", manifestJson: "...", jsonError: null }
+patchable_text_fields: [{ field: "manifestJson", store_id: "applications", path: "applicationCreationState.manifestJson" }]
+```
+
+### Goal
+Populate the create form with application details and manifest JSON.
+
+### Actions
+
+**1. Build the manifest JSON:**
+
+```json
+{
+  "metadata": {
+    "name": "Application Name",
+    "version": "1.0.0",
+    "description": "What this application does"
+  },
+  "layout": {
+    "type": "vstack",
+    "gap": 16,
+    "children": [
+      { "element_id": "header" },
+      { "element_id": "main_content" }
+    ]
+  },
+  "ui_elements": {
+    "header": {
+      "component": "Header",
+      "props": { "title": "Dashboard Title" }
+    },
+    "main_content": {
+      "component": "DataTable",
+      "props": { "data_source_id": "main_data" }
+    }
+  },
+  "data_sources": {
+    "main_data": {
+      "type": "mcp_tool",
+      "tool_name": "mcp_server_tool",
+      "transformations": []
+    }
+  },
+  "actions": {}
+}
+```
+
+**2. Fill the creation form:**
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", "updates": {"applicationCreationState": {"name": "Application Name", "description": "Brief description", "manifestJson": "{ ... full JSON manifest ... }"}}}}
+```
+
+**Field rules:**
+- `name`: Required, must not be empty
+- `description`: Optional but recommended
+- `manifestJson`: Must be valid JSON conforming to manifest schema
+
+**3. Verify in next context:**
+- Check `form_data` shows populated values
+- Check `jsonError` is null (no syntax errors)
+
+### Transitions
+- Form populated, no errors → **VALIDATE**
+- JSON syntax error → Fix JSON, retry fill
+- Form fill failed → Check error, retry once
+
+---
+
+## State: VALIDATE
+
+### Indicators
+- Form is populated with manifest
+- Need to verify manifest structure is valid
+- Haven't yet confirmed all references are correct
+
+### Context Check
+```
+form_data.jsonError: Should be null
+form_data.manifestJson: Should contain valid JSON
+```
+
+### Goal
+Verify the manifest is structurally valid before saving.
+
+### Actions
+
+**1. Validation checklist:**
+
+- [ ] JSON syntax is valid (no `jsonError`)
+- [ ] All `element_id` in layout exist in `ui_elements`
+- [ ] All `data_source_id` references exist in `data_sources`
+- [ ] All `action_id` references exist in `actions`
+- [ ] All `component` names are valid (check `APPLICATION_COMPONENTS`)
+- [ ] All `workflow_id` values are integers (not strings)
+- [ ] Layout tree has no circular references
+
+**2. If validation fails, use patching:**
+
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationCreationState.manifestJson", "start_line": 45, "end_line": 52, "expected_text": "... current text ...", "replacement_text": "... fixed text ..."}}
+```
+
+**When to use patching vs full replacement:**
+- Patching: Fix specific section, correct a reference, add single element
+- Full replacement: Major structural changes, starting over
+
+### Transitions
+- All validations pass → **SAVE**
+- Validation fails → Fix with patching, re-validate
+- Major issues → Return to **FORM_FILL** with full replacement
+
+---
+
+## State: SAVE
+
+### Indicators
+- Manifest is validated
+- Form is complete
+- Ready to create the application
+
+### Context Check
+```
+elements: Should include create/submit button
+form_data.jsonError: Must be null
+```
+
+### Goal
+Save the application and verify success.
+
+### Actions
+
+**1. Check for JSON validation errors:**
+- If `jsonError` is present → Fix JSON before saving
+
+**2. Click the create button:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "create-application-submit-btn"}}
+```
+
+**3. Verify result:**
+
+Check the tool result:
+- `success: true` → Proceed to **COMPLETE**
+- `success: false` → Read error message completely
+
+**4. If save failed:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Invalid JSON" | Malformed manifest | Fix JSON syntax |
+| "Missing required field" | Empty name | Fill name field |
+| "Invalid component" | Unknown component name | Check APPLICATION_COMPONENTS |
+| "Invalid data source reference" | Element references non-existent DS | Fix reference or add DS |
+| "Invalid workflow_id" | String instead of integer | Use number: `123` not `"123"` |
+
+### Transitions
+- Save successful → **COMPLETE**
+- Save failed with fixable error → Return to **VALIDATE**
+- Save failed with unclear error → Return to user with status
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- Application has been created
+- Modal has closed
+- Application appears in the list
+
+### Actions
+
+**1. Confirm success to user:**
+
+```
+✅ **Application created successfully!**
+
+**Application:** [name]
+**Components:** [count] UI elements
+**Data sources:** [count]
+
+**Would you like to:**
+- Open the application to see it in action?
+- Make modifications?
+```
+
+**2. Offer logical next action:**
+- Open application → Click `open-application-{id}`
+- Edit application → Click `edit-application-{id}`
+- Create another → Start new UNDERSTAND state
+
+---
+
+## Reference: Manifest Structure Templates
+
+### Simple Dashboard with Metrics
+
+```json
+{
+  "metadata": { "name": "Simple Dashboard", "version": "1.0.0" },
+  "layout": {
+    "type": "vstack",
+    "gap": 16,
+    "children": [
+      { "element_id": "header" },
+      {
+        "type": "hstack",
+        "gap": 16,
+        "children": [
+          { "element_id": "metric1" },
+          { "element_id": "metric2" }
+        ]
+      }
+    ]
+  },
+  "ui_elements": {
+    "header": {
+      "component": "Header",
+      "props": { "title": "Dashboard" }
+    },
+    "metric1": {
+      "component": "MetricCard",
+      "props": { "title": "Total", "data_source_id": "count_ds" }
+    },
+    "metric2": {
+      "component": "MetricCard",
+      "props": { "title": "Average", "data_source_id": "avg_ds" }
+    }
+  },
+  "data_sources": {
+    "count_ds": {
+      "type": "mcp_tool",
+      "tool_name": "mcp_database_count",
+      "transformations": [{ "operation": "get_item", "path": "count" }]
+    },
+    "avg_ds": {
+      "type": "mcp_tool",
+      "tool_name": "mcp_database_average",
+      "transformations": [{ "operation": "get_item", "path": "average" }]
+    }
+  },
+  "actions": {}
+}
+```
+
+### Dashboard with Tabs
+
+```json
+{
+  "metadata": { "name": "Tabbed Dashboard", "version": "1.0.0" },
+  "layout": {
+    "type": "tabs",
+    "tabs": [
+      {
+        "id": "overview",
+        "label": "Overview",
+        "content": {
+          "type": "vstack",
+          "children": [{ "element_id": "overview_chart" }]
+        }
+      },
+      {
+        "id": "details",
+        "label": "Details",
+        "content": {
+          "type": "vstack",
+          "children": [{ "element_id": "details_table" }]
+        }
+      }
+    ]
+  },
+  "ui_elements": { ... },
+  "data_sources": { ... },
+  "actions": {}
+}
+```
+
+### Dashboard with Actions
+
+```json
+{
+  "actions": {
+    "refresh_data": {
+      "type": "trigger_workflow",
+      "workflow_id": 42,
+      "label": "Refresh Data"
+    },
+    "export": {
+      "type": "mcp_tool",
+      "tool_name": "mcp_export_csv",
+      "label": "Export CSV"
+    }
+  }
+}
+```
+
+---
+
+## Common Pitfalls
+
+1. **Skipping the create button**: Filling the form does NOT create the application—must click create.
+
+2. **Invalid JSON syntax**: Use proper escaping, match braces, no trailing commas.
+
+3. **Invalid component names**: Check `APPLICATION_COMPONENTS` for valid component names.
+
+4. **Dangling references**: Every `data_source_id` and `element_id` must exist.
+
+5. **String workflow IDs**: `workflow_id` must be an integer: `42` not `"42"`.
+
+6. **Circular layouts**: Layout tree must be acyclic—no element can contain itself.
+
+7. **Using patching for major changes**: For significant restructuring, use full replacement instead.

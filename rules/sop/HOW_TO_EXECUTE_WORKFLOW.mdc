@@ -1,116 +1,295 @@
 ---
-description: "Standard Operating Procedure: Executing a workflow. Tactical steps for the agent to follow when running a workflow on behalf of a user."
+description: "Operational Protocol: Configuring and triggering workflow execution. State-based guidance for setting parameters and starting a workflow run."
 globs: []
 alwaysApply: false
 ---
-## SOP: Execute Workflow
 
-**Context:** This rule is loaded when the user is on the workflow execution page. The agent is already viewing a specific workflow's execution interface.
+# Protocol: Execute Workflow
 
-### Step 1: Check if Parameters are Required
+**Purpose:** Guide the user through configuring workflow parameters and triggering execution.
 
-**Look in the context for:**
-- Parameter definitions (if the workflow uses `${workflow.params.X}`)
-- Required vs. optional parameters
-- Parameter types (string, number, object, etc.)
+**Prerequisites:**
+- User is on `/workflow-execute/:id` page (or navigating there)
+- Workflow has been selected for execution
+- Workflow is in configuring state (`?state=configuring`)
 
-**If no parameters are required:** Skip to Step 3.
+---
 
-### Step 2: Fill Required Parameters
+## State Machine Overview
 
-Use `ui_fill_state` to set the workflow parameters:
-
-```json
-{
-  "store_name": "workflow",
-  "state_path": "workflowParams",
-  "updates": {
-    "param_name_1": "value",
-    "param_name_2": 42,
-    "nested_param": {
-      "key": "value"
-    }
-  }
-}
+```
+EXPLAIN → CONFIGURE → EXECUTE → [WAIT] → COMPLETE
+    ↑         │
+    └─────────┘ (if parameters need adjustment)
 ```
 
-**Guidelines:**
-- Match the expected type (string, number, boolean, object)
-- Provide all required parameters
-- Ask user for clarification if parameter purpose is unclear
-- Optional parameters can be omitted
+Note: The WAIT state is automatic—agent cannot take action while workflow executes.
 
-### Step 3: Trigger Execution
+---
 
-Once parameters are set (or if none are needed), execute the workflow:
+## State: EXPLAIN
 
-```json
-{
-  "action_name": "execute_workflow"
-}
+### Indicators
+- User has arrived at the execution page
+- They may not understand what this workflow does
+- Parameters have not been reviewed yet
+
+### Context Check
+```
+page.full_path: Should be "/workflow-execute/*"
+workflow.title: Name of the workflow
+workflow.description: What it does
+form_schema: Array of parameters the workflow accepts
 ```
 
-### Step 4: Monitor Progress
+### Goal
+Help the user understand what this workflow does before configuring it.
 
-**What you'll see in context:**
-- Execution state: `executing`, `complete`, or `error`
-- Progress percentage
-- Step-by-step status (pending, running, completed, failed)
-- Step outputs (as they complete)
+### Actions
 
-**Keep user informed:**
-- Report when execution starts
-- Update on progress for long-running workflows
-- Notify when complete
+**1. Read workflow details from context:**
+- `workflow.title` - What this workflow is called
+- `workflow.description` - Detailed explanation
+- `form_schema` - Parameters it accepts
 
-### Step 5: Report Results
+**2. Explain to the user:**
 
-**On successful completion:**
-- Summarize what the workflow did
-- Highlight key outputs or results
-- If results include data, format it clearly for the user
+```
+📋 **Workflow:** [title]
 
-**On failure:**
-- Identify which step failed
-- Report the error message
-- Suggest next steps (see Troubleshooting below)
+**Purpose:** [description]
 
-### Troubleshooting Failed Executions
+**Parameters this workflow needs:**
+[List parameters from form_schema with their types]
+```
 
-**Error: Missing required parameter**
-- Go back to Step 2
-- Fill the missing parameter
-- Re-execute
+**3. Check if parameters are required:**
 
-**Error: Invalid parameter type**
-- Check the expected type
-- Convert the value to the correct type
-- Re-execute
+If `form_schema` is empty or all parameters have defaults:
+- Workflow can run immediately
+- Offer to execute or let user review
 
-**Error: Step X failed**
-- Check the step's error message in execution data
-- This usually means:
-  - Tool is unavailable
-  - Tool input was invalid
-  - External API/data source failed
-- Suggest: review the workflow definition or check monitoring logs
+### Transitions
+- Parameters need values → **CONFIGURE**
+- No parameters required → **EXECUTE**
+- User wants to understand more → Remain in **EXPLAIN**
 
-**Error: Permission denied**
-- User lacks permission to execute this workflow
-- Cannot be fixed by the agent - inform the user
+---
 
-### After Execution
+## State: CONFIGURE
 
-**Next actions you can offer:**
-- View detailed logs: Navigate to `/monitoring`
-- Re-run with different parameters
-- Edit the workflow if there's an error in the definition
-- Share the results
+### Indicators
+- Workflow has parameters that need values
+- User needs to provide input
+- `form_schema` contains required fields
 
-### Common Pitfalls to Avoid
+### Context Check
+```
+form_schema: [
+  { "name": "param1", "type": "string", "required": true },
+  { "name": "param2", "type": "number", "required": false, "default": 10 }
+]
+current_values: Current parameter values (if any set)
+```
 
-1. **Don't execute without required parameters** - Check first
-2. **Don't provide wrong parameter types** - Match what the workflow expects
-3. **Don't ignore execution errors** - Always check the result
-4. **Don't lose track of long-running executions** - Keep monitoring
-5. **Don't forget to explain results** - Users need context, not just raw data
+### Goal
+Collect all required parameter values from the user or set defaults.
+
+### Actions
+
+**1. Identify what's needed:**
+
+For each parameter in `form_schema`:
+- Is it required? (`required: true`)
+- What type is expected? (string, number, boolean, object, array)
+- Is there a default? (`default` field)
+- What's it for? (`description` field)
+
+**2. Ask user for required values:**
+
+```
+This workflow needs the following parameters:
+
+**Required:**
+- `email_address` (string): The recipient email
+
+**Optional:**
+- `max_results` (number, default: 10): How many results to return
+
+Please provide the required values.
+```
+
+**3. Set parameters:**
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowParams": {"param_name_1": "value", "param_name_2": 42}}}}
+```
+
+**4. Verify parameters are set:**
+
+Check `current_values` in next context to confirm values were applied.
+
+### Type Reference
+
+| Type | Example Value | Notes |
+|------|---------------|-------|
+| `string` | `"hello"` | Text value, use quotes |
+| `number` | `42` or `3.14` | No quotes, can be decimal |
+| `boolean` | `true` or `false` | No quotes |
+| `object` | `{"key": "value"}` | Nested structure |
+| `array` | `["a", "b", "c"]` | List of values |
+
+### Transitions
+- All required parameters set → **EXECUTE**
+- User provides values → Set them and verify
+- Validation error → Check `validation_error` in context, fix and retry
+
+---
+
+## State: EXECUTE
+
+### Indicators
+- All required parameters are set
+- Workflow is ready to run
+- Execute button should be available
+
+### Context Check
+```
+elements: Should include execute button
+current_values: All required parameters should have values
+validation_error: Should be null/empty
+```
+
+### Goal
+Trigger workflow execution.
+
+### Actions
+
+**1. Verify ready to execute:**
+
+Check that:
+- All required parameters have values
+- No validation errors in context
+- Execute button is available in elements
+
+**2. Confirm with user (optional but recommended):**
+
+```
+Ready to execute **[workflow.title]** with:
+- param1: value1
+- param2: value2
+
+Shall I start the execution?
+```
+
+**3. Trigger execution:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "execute-workflow-btn"}}
+```
+
+**4. Inform user what happens next:**
+
+```
+🚀 Workflow execution started!
+
+The page will show execution progress. I cannot take actions while the workflow is running, but I'll help interpret the results when it completes.
+```
+
+### Transitions
+- Execution started → **WAIT** (automatic, no agent action)
+- Execution failed to start → Check error, return to **CONFIGURE**
+
+---
+
+## State: WAIT (Informational Only)
+
+### Indicators
+- Page state is `?state=executing`
+- Workflow is actively running
+- Agent cannot take action
+
+### Context Check
+```
+page.full_path: Should contain "state=executing"
+execution_status: "running"
+```
+
+### Goal
+No action possible—this is an informational state.
+
+### Actions
+
+**NONE** - The agent cannot and should not attempt any actions while executing.
+
+**If user asks about status:**
+- Explain the workflow is currently running
+- Results will be available when complete
+- Offer to help interpret results when done
+
+### Transitions
+- Execution completes → **COMPLETE** (triggers `HOW_TO_DEBUG_WORKFLOW` protocol)
+- User navigates away → Protocol ends
+
+---
+
+## Reference: Common Parameter Patterns
+
+### String Parameter
+```json
+{
+  "name": "email",
+  "type": "string",
+  "required": true,
+  "description": "Recipient email address"
+}
+```
+Set with: `{"email": "user@example.com"}`
+
+### Number Parameter
+```json
+{
+  "name": "limit",
+  "type": "number",
+  "required": false,
+  "default": 10
+}
+```
+Set with: `{"limit": 25}` (no quotes around number)
+
+### Boolean Parameter
+```json
+{
+  "name": "include_details",
+  "type": "boolean",
+  "required": false,
+  "default": false
+}
+```
+Set with: `{"include_details": true}` (no quotes)
+
+### Object Parameter
+```json
+{
+  "name": "filters",
+  "type": "object",
+  "required": false
+}
+```
+Set with: `{"filters": {"status": "active", "limit": 10}}`
+
+---
+
+## Common Pitfalls
+
+1. **Executing without required parameters**: Will fail—always check `form_schema` for `required: true`.
+
+2. **Wrong parameter types**: `"42"` (string) is not `42` (number). Match the expected type.
+
+3. **Trying to monitor progress**: Agent cannot take action during execution—just wait.
+
+4. **Forgetting defaults**: Optional parameters with defaults don't need values unless user wants different.
+
+5. **Not verifying parameter values**: After setting, check `current_values` to confirm they were applied.
+
+6. **Interpreting results on this page**: Results interpretation uses the `HOW_TO_DEBUG_WORKFLOW` protocol, not this one.

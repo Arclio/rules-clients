@@ -1,171 +1,363 @@
 ---
-description: "Standard Operating Procedure: Creating a workflow. Tactical steps for the agent to follow when creating a workflow on behalf of a user."
+description: "Operational Protocol: Creating a workflow. State-based guidance for helping users create new workflows on the platform."
 globs: []
 alwaysApply: false
 ---
-## SOP: Create Workflow
 
-**Context:** This rule is loaded when the user is on the workflow creation page or modal. The agent is already in the creation context.
+# Protocol: Create Workflow
 
-### Step 1: Understand What the User Wants
+**Purpose:** Guide the user through creating a new workflow with valid syntax and verified tool integrations.
 
-Ask clarifying questions if needed:
+**Prerequisites:**
+- User is on `/workflow?mode=create` page or navigable to it
+- User has identified what they want the workflow to accomplish
+
+---
+
+## State Machine Overview
+
+```
+UNDERSTAND → DISCOVER_TOOLS → DRAFT → FORM_FILL → SAVE → COMPLETE
+    ↑              │             │
+    └──────────────┴─────────────┘ (can return if issues found)
+```
+
+---
+
+## State: UNDERSTAND
+
+### Indicators
+- User has mentioned a task or goal they want to automate
+- The specific requirements are not yet fully understood
+- You don't know what data sources, APIs, or outputs are involved
+
+### Context Check
+- Verify current page via `page.full_path`
+- Check if user is already on workflow creation page
+
+### Goal
+Clarify the user's requirements before proceeding.
+
+### Actions
+
+**1. Ask clarifying questions if needed:**
 - What should the workflow do (high-level goal)?
 - What data sources or APIs are involved?
 - What is the expected output?
 
-### Step 2: Identify Required MCP Tools
+**2. Summarize understanding before proceeding:**
 
-**Action:** Query the available MCP tools to see what's available.
+```
+I understand you want to create a workflow that:
+- [Goal 1]
+- [Goal 2]
+- Expected output: [Output description]
 
-- Use MCP tool discovery (if available in context) to list available tools
-  - **Note:** When querying tools for a specific server, ALWAYS use `snake_case` (e.g., `google_workspace`, not "Google Workspace").
-- Match user requirements to available tools
-- For each tool you plan to use, call it individually with test inputs to verify:
-  - What parameters it accepts
-  - What structure it returns
-  - Any quirks or edge cases
-
-**Why:** You cannot write a valid workflow without knowing the exact tool signatures and output structures.
-
-### Step 3: Draft and Validate Content (CRITICAL)
-
-**Reference:** Load and follow `WORKFLOW_SYNTAX` and `WORKFLOW_PATTERNS` rules. Start from the **Golden Template** in `WORKFLOW_SYNTAX`.
-
-**Action:** Before calling any UI tool, mentally draft the `.wf.md` content and run through the validation checklist.
-
-**Required elements:**
-1. **Frontmatter** (YAML block at top):
-   - `title`: Short, descriptive name
-   - `description`: One-sentence summary
-   - `version`: "2.1"
-   - `autonomous`: true
-   - `parameters`: **REQUIRED if you use `${workflow.params.*}` anywhere!**
-
-2. **Steps** (one or more):
-   - Each step must have: `## Step N: Title`
-   - Each step must specify either `**Tool:**` or `**Type:**`
-   - Define `**Inputs:**` for tool parameters
-   - Define `**Outputs:**` with variable name, type, and extraction path
-
-**⚠️ VALIDATION CHECKLIST (Run through this BEFORE filling the form):**
-
-| Check | What to Verify |
-|-------|----------------|
-| ✅ Parameters declared | Every `${workflow.params.X}` has matching entry in `parameters:` block |
-| ✅ LLM model specified | Every `llm` tool step has `model: "anthropic/claude-sonnet-4-5"` (or other valid model) |
-| ✅ LLM inputs complete | Every `llm` step has `system_prompt`, `user_prompt`, AND `model` |
-| ✅ Steps numbered | Steps are numbered sequentially: 1, 2, 3... |
-| ✅ Variable references valid | Every `${stepN.var}` references a declared output |
-| ✅ No scope violations | Child step outputs not accessed from parent scope |
-| ✅ Tool names correct | Tool names match those verified in Step 2 |
-| ✅ Internet search uses LLM | For web search, use `llm` tool (NOT `brave_search__*`) |
-
-**Common Validation Failures (Avoid These):**
-- ❌ `Workflow references undeclared parameters: week_start` → Add `week_start` to `parameters:` block
-- ❌ `LLM call missing required 'model' parameter` → Add `model: "anthropic/claude-sonnet-4-5"`
-
-
-### Step 4: Fill the Creation Form
-
-Use `ui_fill_state` to populate the form:
-
-```json
-{
-  "store_name": "workflow",
-  "state_path": "workflowCreationState",
-  "updates": {
-    "title": "Workflow Title",
-    "description": "Brief description",
-    "scenario": "1. Fetch calendar events for the week\n2. Analyze events with LLM\n3. Generate summary document\n4. Save to Google Drive",
-    "content": "---\ntitle: ...\n..."
-  }
-}
+Is that correct?
 ```
 
-**Field Requirements:**
+### Transitions
+- User confirms understanding → **DISCOVER_TOOLS**
+- User provides more requirements → Remain in **UNDERSTAND**
+- Requirements are already clear from initial request → **DISCOVER_TOOLS**
 
-| Field | Purpose | Guidelines |
-|-------|---------|------------|
-| `title` | Workflow name | Short, descriptive (e.g., "Weekly Calendar Summary") |
-| `description` | One-sentence summary | Brief overview of what it does |
-| `scenario` | **Human-readable step breakdown** | See below - THIS IS CRITICAL |
-| `content` | The `.wf.md` workflow definition | Must pass validation from Step 3 |
+---
 
-#### The `scenario` Field (CRITICAL FOR USER UNDERSTANDING)
+## State: DISCOVER_TOOLS
 
-The `scenario` field is **NOT** part of the `.wf.md` syntax - it's a form field that provides a **human-readable summary** of what the workflow does, step by step.
+### Indicators
+- Requirements are understood
+- You need to identify which MCP tools can fulfill the requirements
+- You haven't yet verified tool signatures and outputs
 
-**Why it matters:** Users may not understand workflow syntax, but they CAN understand the scenario. It lets them verify the workflow does what they expect.
+### Context Check
+- Check available MCP servers via `list_mcp_connections`
+- Note which servers might have relevant tools
 
-**How to write a good scenario:**
-- Break down the workflow into numbered, plain-English steps
-- Each step should describe WHAT happens, not HOW (no technical details)
-- Keep it concise but complete
+### Goal
+Identify and verify the exact tool signatures needed for the workflow.
 
-**Good scenario example:**
+### Actions
+
+**1. List available MCP tools:**
+
 ```
-1. Get all calendar events for the specified week
-2. Analyze the events and identify key meetings
-3. Generate a formatted summary with daily breakdown
-4. Create a Google Doc with the summary
-5. Share the document link
-```
-
-**Bad scenario example (too technical):**
-```
-Execute google_workspace__calendar_get_events with time_min and time_max params,
-then call llm tool with claude-sonnet-4-5 to analyze...
+TOOL_CALL: {"name": "list_mcp_connections", "parameters": {}}
 ```
 
-### Step 5: **SAVE the Workflow** (CRITICAL STEP)
+**2. For each server that might have relevant tools, explore:**
 
-**⚠️ IMPORTANT:** Filling the form does NOT create the workflow. You MUST click the save button.
+```
+TOOL_CALL: {"name": "get_mcp_tools_for_server", "parameters": {"server_name": "server_name_in_snake_case"}}
+```
 
-**Action Required:**
+**Important:** Server names MUST be in `snake_case` (e.g., `google_workspace`, not "Google Workspace").
 
-1. **Check button state** in `page_data.buttons.create`:
-   - If `enabled: false` → Check `enabled_reason` to see what's missing (usually title)
-   - If `enabled: true` → Proceed to step 2
+**3. For each tool you plan to use, get the full schema:**
 
-2. **Click the save button:**
-   ```json
-   ui_trigger_click({"element_id": "create-workflow-submit-btn"})
-   ```
+```
+TOOL_CALL: {"name": "get_mcp_tool_schema", "parameters": {"server_name": "server_name", "tool_name": "tool_name"}}
+```
 
-3. **Wait for and READ the tool result:**
-   - **Success:** `{success: true}` → Workflow created! Continue to Step 6
-   - **Error:** `{success: false, errors: [...]}` → **READ the error messages**
-     - Common errors: Invalid syntax, missing required fields, tool name typos
-     - **FIX the workflow content** based on error message
-     - **Return to Step 4** to update the form with corrected content
-     - **Retry this step** (click save again)
+**4. Test tools with sample inputs to verify:**
+- What parameters they accept
+- What structure they return
+- Any quirks or edge cases
 
-**DO NOT** tell the user "workflow created" until you receive `success: true` from the save button click.
+### Transitions
+- All required tools identified and verified → **DRAFT**
+- Tool not available → Inform user, ask for alternatives or return to **UNDERSTAND**
+- Tool returns unexpected structure → Note for workflow design, proceed to **DRAFT**
 
-### Step 6: Confirm Success and Next Steps
+---
 
-After receiving `success: true` from the save button:
+## State: DRAFT
 
-- Close the creation modal
-- Workflow now appears in the workflow gallery
-- **You will remain on the workflow list page** (No auto-redirect)
+### Indicators
+- Required tools are identified and verified
+- Ready to write the workflow content
+- Workflow syntax not yet written
 
-**Inform the user:**
-- Workflow was successfully created ✅
-- It is now visible in the list
-- Ask if they want to **Run** it or **Edit** it now
+### Context Check
+- Reference `WORKFLOW_SYNTAX` for correct format
+- Reference `WORKFLOW_PATTERNS` for best practices
+- Reference `WORKFLOW_TOOLING` for tool usage patterns
 
-### Common Pitfalls to Avoid
+### Goal
+Create valid workflow content in `.wf.md` format.
 
-1. **Don't skip the save step** - Filling the form ≠ Creating the workflow
-2. **Don't ignore error messages** - If save fails, READ the error and fix the issue
-3. **Don't guess tool signatures** - Always verify before writing the workflow
-4. **Don't skip frontmatter** - It's required
-5. **Don't create dangling variable references** - Every `${stepN.var}` must exist
-6. **Don't use tools you haven't tested** - You need to know their output structure
-7. **Don't assume success** - Wait for explicit confirmation from tool results
-8. **Don't forget `parameters:`** - If you use `${workflow.params.X}`, declare X in frontmatter
-9. **Don't forget `model:` in LLM steps** - Always include `model: "anthropic/claude-sonnet-4-5"`
-10. **Don't use old/invalid model names** - Only use models from the supported list in `WORKFLOW_TOOLING`
-11. **Don't use Brave Search for web research** - Use `llm` tool instead (proper output format)
+### Actions
+
+**1. Build the frontmatter:**
+
+```yaml
+---
+title: "Short, descriptive name"
+description: "One-sentence summary"
+version: "2.1"
+autonomous: true
+---
+```
+
+**2. Define each step:**
+
+Each step must have:
+- `## Step N: Title`
+- `**Tool:**` or `**Type:**`
+- `**Inputs:**` for tool parameters
+- `**Outputs:**` with variable name, type, and extraction path
+
+**3. Validation checklist:**
+
+Before proceeding, verify:
+- [ ] Frontmatter has all required fields
+- [ ] Every step is numbered sequentially
+- [ ] Every variable reference (`${...}`) points to a defined output
+- [ ] No scope violations (child step outputs accessed from parent)
+- [ ] Tool names match those verified in DISCOVER_TOOLS
+- [ ] Output extraction paths match verified tool responses
+
+### Transitions
+- Workflow content is valid → **FORM_FILL**
+- Syntax issues found → Fix and re-validate in **DRAFT**
+- Need to verify additional tools → Return to **DISCOVER_TOOLS**
+
+---
+
+## State: FORM_FILL
+
+### Indicators
+- Valid workflow content is ready
+- Need to populate the creation form
+- Current route should be `/workflow?mode=create`
+
+### Context Check
+```
+page.full_path: Should be "/workflow?mode=create"
+data.workflowCreationState: Shows current form state
+elements: Should include form-related elements
+```
+
+### Goal
+Populate ALL required form fields with the prepared workflow content.
+
+### Actions
+
+**1. Navigate to create page (if not already there):**
+
+Check `page.full_path`. If not on `/workflow?mode=create`:
+- Navigate to `/workflow` first
+- Look for create button in `elements` and click it
+
+**2. Fill the creation form:**
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowCreationState": {"title": "Workflow Title", "description": "Brief description", "scenario": "data_processing", "content": "---\ntitle: ...\n..."}}}}
+```
+
+**Field rules:**
+- `title`: Must not be empty
+- `scenario`: Pick appropriate category based on workflow type
+- `content`: Must be valid `.wf.md` (validated in DRAFT state)
+
+**3. Verify in next context:**
+- Check `data.workflowCreationState` shows populated values
+- All fields should match what you submitted
+
+### Transitions
+- Form verified populated → **SAVE**
+- Form fill failed → Check error, fix data, retry once
+- Repeated failure → Return to user with status
+
+---
+
+## State: SAVE
+
+### Indicators
+- Form is populated with all fields
+- Ready to create the workflow
+- Save button should be available
+
+### Context Check
+```
+elements: Should include submit button
+page_data.buttons.create: Check if enabled
+```
+
+### Goal
+Save the workflow and verify success.
+
+### Actions
+
+**1. Check button state:**
+
+Look at `page_data.buttons.create`:
+- If `enabled: false` → Check `enabled_reason` to see what's missing
+- If `enabled: true` → Proceed to save
+
+**2. Click the save button:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "create-workflow-submit-btn"}}
+```
+
+**3. Verify result:**
+
+Check the tool result:
+- `success: true` → Proceed to **COMPLETE**
+- `success: false` → Read error message completely
+
+**4. If save failed:**
+
+Common errors and fixes:
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Invalid syntax" | Malformed workflow content | Check YAML frontmatter and step format |
+| "Missing required field" | Empty title or content | Return to FORM_FILL, add missing field |
+| "Invalid tool reference" | Tool name typo | Verify tool name from DISCOVER_TOOLS |
+| "Variable not found" | Dangling reference | Check step outputs and variable names |
+
+### Transitions
+- Save successful (verified) → **COMPLETE**
+- Save failed with fixable error → Return to **DRAFT** or **FORM_FILL**
+- Save failed with unclear error → Return to user with status
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- Workflow has been created
+- Context shows the new workflow in the list or confirmation view
+
+### Actions
+
+**1. Confirm success to user:**
+
+```
+✅ **Workflow created successfully!**
+
+**Workflow:** [title]
+**Steps:** [number of steps]
+
+**Next steps:**
+- Would you like to run this workflow now?
+- Would you like to make any modifications?
+```
+
+**2. Offer logical next action:**
+- Run workflow → Navigate to execution page
+- Edit workflow → Navigate to edit page
+- Create another → Return to UNDERSTAND for new workflow
+
+---
+
+## Reference: Workflow Syntax Templates
+
+### Frontmatter
+
+```yaml
+---
+title: "Workflow Title"
+description: "What this workflow does"
+version: "2.1"
+autonomous: true
+---
+```
+
+### Step with MCP Tool
+
+```markdown
+## Step 1: Fetch Data
+
+**Tool:** mcp_server-name_tool_name
+**Inputs:**
+- `param1`: "value"
+- `param2`: ${previous_step.output}
+**Outputs:**
+- `data` (object): $.result.data
+```
+
+### Step with LLM
+
+```markdown
+## Step 2: Analyze Results
+
+**Type:** llm
+**Inputs:**
+- `prompt`: "Analyze this data: ${step1.data}"
+**Outputs:**
+- `analysis` (string): The analysis result
+```
+
+### Conditional Step
+
+```markdown
+## Step 3: Conditional Processing
+
+**Type:** conditional
+**Condition:** ${step2.analysis.needs_processing} == true
+**If True:**
+  ## Step 3.1: Process Data
+  **Tool:** processor_tool
+  ...
+```
+
+---
+
+## Common Pitfalls
+
+1. **Skipping tool verification**: Always test tools before writing workflow—you need exact signatures.
+
+2. **Using wrong tool name format**: MCP tool names are `mcp_{server}_{tool}` with underscores for spaces.
+
+3. **Dangling variable references**: Every `${stepN.var}` must point to a defined output.
+
+4. **Skipping the save step**: Filling the form ≠ Creating the workflow. Always click save.
+
+5. **Ignoring save errors**: If save fails, READ the error message—it tells you what's wrong.
+
+6. **Not validating extraction paths**: Verify tool response structure matches your `$.path` expressions.
+
+7. **Assuming success without confirmation**: Wait for explicit `success: true` from save button.

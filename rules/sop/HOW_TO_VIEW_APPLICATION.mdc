@@ -1,0 +1,362 @@
+---
+description: "Operational Protocol: Viewing and live-editing an application. State-based guidance for helping users interact with rendered dashboards."
+globs: []
+alwaysApply: false
+---
+
+# Protocol: View Application
+
+**Purpose:** Guide the user through viewing a rendered dashboard and making live edits to the manifest.
+
+**Prerequisites:**
+- User is on `/applications/{id}` (viewing a rendered dashboard)
+- Application has loaded and is rendering
+- User may want to interact with data, trigger actions, or make live edits
+
+---
+
+## State Machine Overview
+
+```
+ASSESS → INTERACT → [EDIT] → SAVE_CHANGES → COMPLETE
+    ↑        │          │
+    └────────┴──────────┘ (continuous interaction)
+```
+
+Note: Users may jump between INTERACT and EDIT states repeatedly.
+
+---
+
+## State: ASSESS
+
+### Indicators
+- User has arrived at or is viewing the application dashboard
+- Need to understand what's displayed and any issues
+- Haven't yet determined what the user wants to do
+
+### Context Check
+```
+page_type: "application_view"
+application: { id, name, description, version }
+manifest_summary: { total_ui_elements, total_data_sources, tabs }
+active_tab: { id, label, elements_in_view }
+data_sources_status: { total, loaded, loading, errored }
+rendering_errors: [{ element_id, error, component }]
+has_unsaved_changes: boolean
+```
+
+### Goal
+Understand the dashboard state and identify any issues.
+
+### Actions
+
+**1. Check for errors:**
+- Review `rendering_errors` for component failures
+- Review `data_sources_status` for data loading issues
+- Note which elements are affected
+
+**2. Understand current view:**
+- Which tab is active? (`active_tab.id`)
+- What elements are visible? (`active_tab.elements_in_view`)
+- What actions are available? (`available_actions`)
+
+**3. If errors exist, report proactively:**
+
+```
+I notice some issues with the dashboard:
+
+**Rendering Errors:**
+- [element_id]: [error message]
+
+**Data Source Issues:**
+- [count] data sources errored
+
+Would you like me to help diagnose and fix these?
+```
+
+### Transitions
+- User asks to interact with data/actions → **INTERACT**
+- User asks to modify the dashboard → **EDIT**
+- User asks about errors → **ASSESS** (provide diagnosis)
+- Dashboard is healthy, user exploring → **INTERACT**
+
+---
+
+## State: INTERACT
+
+### Indicators
+- User wants to use the dashboard (not edit it)
+- May want to trigger actions, switch tabs, or understand data
+- No live editing required
+
+### Context Check
+```
+available_actions: [{ action_id, label, type }]
+manifest_summary.tabs: Tab IDs if tabbed layout
+active_tab: Current tab info
+```
+
+### Goal
+Help the user interact with the dashboard.
+
+### Actions
+
+**For "Run the analysis" / Trigger an action:**
+
+1. Find action in `available_actions` with matching label
+2. Click the action button:
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "app-action-{action_id}"}}
+```
+
+3. For workflow actions: User will be redirected to workflow execution page
+
+**For "Switch to X tab":**
+
+1. Find tab ID in `manifest_summary.tabs`
+2. Click the tab:
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "tab-{tabId}"}}
+```
+
+3. Context will update with new `active_tab`
+
+**For "Why is this empty/broken?":**
+
+1. Check `rendering_errors` for the element
+2. Check `data_sources_status` for data issues
+3. Explain clearly:
+
+```
+The [element name] is empty because the data source "[ds_id]" failed with error: "[error]".
+
+This is likely due to [diagnosis]. Would you like me to fix it?
+```
+
+### Transitions
+- User asks to fix/modify something → **EDIT**
+- User continues interacting → Remain in **INTERACT**
+- User is done → **COMPLETE**
+
+---
+
+## State: EDIT
+
+### Indicators
+- User wants to modify the dashboard
+- Changes will be made to `currentManifestJson`
+- Dashboard will re-render after edits
+
+### Context Check
+```
+patchable_text_fields: [{ field: "currentManifestJson", store_id: "applications", path: "currentManifestJson" }]
+has_unsaved_changes: false (initially)
+```
+
+### Goal
+Apply live edits to the manifest using patching.
+
+### Actions
+
+**Key insight:** The manifest JSON (`currentManifestJson`) is patchable while viewing. Changes apply immediately and the dashboard re-renders.
+
+**1. Explain what you're changing:**
+
+```
+I'll add a new metric card to show [description]. This will update the dashboard immediately.
+```
+
+**2. Apply patch using ui_patch_text:**
+
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "currentManifestJson", "start_line": 45, "end_line": 52, "expected_text": "... current JSON ...", "replacement_text": "... updated JSON ..."}}
+```
+
+**3. Verify the change:**
+- Dashboard re-renders with changes
+- `has_unsaved_changes` becomes `true`
+- Check for new errors in `rendering_errors`
+
+### Common Edit Operations
+
+**Add a new component:**
+1. Patch `ui_elements` to add component definition
+2. Patch `layout` to include element reference
+3. Patch `data_sources` if new data needed
+
+**Fix a data source:**
+1. Patch the specific data source configuration
+2. May need to fix tool name, params, or transformations
+
+**Modify component props:**
+1. Patch the specific element in `ui_elements`
+2. Update relevant props
+
+**Add an action:**
+1. Patch `actions` section
+2. Optionally add to Header component's actions prop
+
+### Transitions
+- Changes applied, user wants more → Remain in **EDIT**
+- Changes complete, user wants to save → **SAVE_CHANGES**
+- Changes complete, user wants to discard → **INTERACT** (after discard)
+- User satisfied with changes → Prompt to save
+
+---
+
+## State: SAVE_CHANGES
+
+### Indicators
+- Live edits have been made
+- `has_unsaved_changes: true`
+- User wants to persist changes
+
+### Context Check
+```
+has_unsaved_changes: true
+elements: Should include save/discard buttons
+```
+
+### Goal
+Persist or discard the changes.
+
+### Actions
+
+**To save changes:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "save-manifest-btn"}}
+```
+
+**To discard changes:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "discard-manifest-btn"}}
+```
+
+**After save/discard:**
+- `has_unsaved_changes` returns to `false`
+- Dashboard reflects saved state (or reverts if discarded)
+
+### Transitions
+- Changes saved → **COMPLETE**
+- Changes discarded → **INTERACT**
+- Save failed → Check error, return to **EDIT**
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- User has finished interacting
+- All changes saved (if any)
+- Dashboard is in clean state
+
+### Actions
+
+**1. Summarize what was done:**
+
+If edits were made:
+```
+✅ Dashboard updated!
+
+**Changes:**
+- [List of changes]
+
+The application is now saved with your modifications.
+```
+
+If just viewing:
+```
+Is there anything else you'd like to do with this dashboard?
+```
+
+**2. Offer next actions:**
+- Continue viewing → Return to **INTERACT**
+- Edit more → Return to **EDIT**
+- Go back to list → Navigate to `/applications`
+
+---
+
+## Reference: Live Editing Patterns
+
+### Add a Metric Card
+
+**Step 1: Add to ui_elements**
+```json
+"new_metric": {
+  "component": "MetricCard",
+  "props": {
+    "title": "New Metric",
+    "data_source_id": "new_metric_ds"
+  }
+}
+```
+
+**Step 2: Add to layout** (find appropriate position)
+```json
+{ "element_id": "new_metric" }
+```
+
+**Step 3: Add data source**
+```json
+"new_metric_ds": {
+  "type": "mcp_tool",
+  "tool_name": "mcp_server_tool",
+  "transformations": [
+    { "operation": "get_item", "path": "data.value" }
+  ]
+}
+```
+
+### Fix a Data Source Transformation
+
+```
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "currentManifestJson", "start_line": 89, "end_line": 91, "expected_text": "    { \"operation\": \"get_item\", \"path\": \"wrong.path\" }", "replacement_text": "    { \"operation\": \"get_item\", \"path\": \"data.results\" }"}}
+```
+
+### Add Action to Header
+
+```json
+// In actions section:
+"refresh_data": {
+  "type": "trigger_workflow",
+  "workflow_id": 42,
+  "label": "Refresh Data"
+}
+
+// In Header props:
+"actions": [{ "action_id": "refresh_data" }]
+```
+
+---
+
+## Store Paths Reference
+
+| Context | Store Path | Usage |
+|---------|------------|-------|
+| View page (live editing) | `currentManifestJson` | Patching while viewing |
+| Edit modal | `applicationEditState.manifestJson` | Editing via modal |
+| Create modal | `applicationCreationState.manifestJson` | Creating new app |
+
+**Important:** Use `currentManifestJson` when on the view page (`/applications/{id}`).
+
+---
+
+## Common Pitfalls
+
+1. **Making changes without saving**: Prompt user to save when `has_unsaved_changes: true`.
+
+2. **Using wrong store path**: Use `currentManifestJson` on view page, not edit modal paths.
+
+3. **Multiple unrelated changes**: Get user confirmation between major changes.
+
+4. **Ignoring rendering errors**: They indicate manifest problems—fix them.
+
+5. **Assuming manifest structure**: Rely on context data and patching, don't assume you know the full structure.
+
+6. **Forgetting to explain changes**: Tell the user what you're changing before patching.
+
+7. **Not checking for errors after edit**: Verify no new rendering errors appeared.

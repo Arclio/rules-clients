@@ -1,217 +1,384 @@
 ---
-description: "Standard Operating Procedure: Editing an existing MCP Server template settings. Tactical steps for the agent to follow when modifying server templates (super_admin only)."
+description: "Operational Protocol: Editing an MCP Server template. State-based guidance for modifying server template settings (super_admin only)."
 globs: []
 alwaysApply: false
 ---
 
-## SOP: Edit MCP Server Template Settings
+# Protocol: Edit MCP Server Template
 
-**Context:** User wants to modify an existing MCP server template's settings (display name, description, config template, UI schema, or OAuth settings).
-
-**Important:** The `settings` tab is only accessible to users with `super_admin` role.
-
-**Reference:** Load `MCP_CONCEPTS` and `HOW_TO_ADD_MCP_SERVER` for configuration structure.
-
-### Step 1: Open the Configure Modal
-
-**Action:** Click "Configure" on the server card you want to edit.
-
-```json
-ui_trigger_click({"element_id": "configure-server-{server_id}"})
-```
-
-### Step 2: Navigate to Settings Tab
-
-**Action:** Click the "Settings" tab.
-
-```json
-ui_trigger_click({"element_id": "settings-tab"})
-```
-
-**Access Control:**
-- If user lacks `super_admin` role, they will be redirected back to `configs` tab
-- Check context for `user_role` or `can_edit_server_settings`
-
-### Step 3: Understand Available Fields
-
-The Settings tab allows editing:
-
-| Field | Description | Impact |
-|-------|-------------|--------|
-| Display Name | User-friendly server name | UI only |
-| Description | Server description | UI only |
-| Config Template | MCP server configuration | Affects how server runs |
-| UI Schema | Form field definitions | Affects configuration UI |
-| OAuth Enabled | Toggle OAuth requirement | Major - affects auth flow |
-| OAuth Handler | google, discord, or null | Changes OAuth provider |
-| OAuth Scopes | Comma-separated scope list | Changes permissions requested |
-
-### Step 4: Edit Server Settings
-
-Use `ui_fill_state` to modify settings:
-
-```json
-{
-  "store_id": "mcp",
-  "updates": {
-    "serverSettingsForm": {
-      "display_name": "Updated Server Name",
-      "description": "New description for the server"
-    }
-  }
-}
-```
-
-**For config template changes:**
-```json
-{
-  "store_id": "mcp",
-  "updates": {
-    "serverSettingsForm": {
-      "config_template_json": "{\"mcpServers\": {\"updated_key\": {...}}}"
-    }
-  }
-}
-```
-
-**For UI schema changes:**
-```json
-{
-  "store_id": "mcp",
-  "updates": {
-    "serverSettingsForm": {
-      "ui_schema_json": "{\"sections\": [{\"title\": \"New Field\", \"type\": \"text\", \"field\": \"new_field\"}]}"
-    }
-  }
-}
-```
-
-**For OAuth settings:**
-```json
-{
-  "store_id": "mcp",
-  "updates": {
-    "serverSettingsForm": {
-      "oauth_enabled": true,
-      "oauth_handler_type": "google",
-      "oauth_scopes_defined_by_admin": "https://www.googleapis.com/auth/drive"
-    }
-  }
-}
-```
-
-### Step 5: Save Changes
-
-**Action:** Click "Update Server"
-
-```json
-ui_trigger_click({"element_id": "update-server-btn"})
-```
-
-**Wait for and READ the tool result:**
-- `success: true` → Server template updated
-- `success: false` → Read error, fix the issue, retry
-
-### Step 6: Return to Configs Tab
-
-After saving, navigate back:
-
-```json
-ui_trigger_click({"element_id": "configs-tab"})
-```
-
-Or close the modal:
-```json
-ui_trigger_click({"element_id": "close-modal-btn"})
-```
-
-### Deleting a Server Template
-
-**Warning:** This is highly destructive and cannot be undone.
+**Purpose:** Guide super_admin users through modifying an existing MCP server template's settings.
 
 **Prerequisites:**
-- User must have `super_admin` role
-- All user configurations for this server must be deleted first
+- User has `super_admin` role (settings tab is restricted)
+- An MCP server template exists that needs modification
+- User understands this affects the template, not individual configurations
 
-**On the Settings tab:**
-```json
-ui_trigger_click({"element_id": "delete-server-btn"})
+---
+
+## Important Distinction
+
+| Editing... | What Changes | Who Can Do It | Affects |
+|------------|--------------|---------------|---------|
+| **Server Template** (this protocol) | How the server runs, what variables it needs | super_admin only | All future configurations |
+| **Configuration** (HOW_TO_CONFIGURE protocol) | User's credentials and settings | Any authorized user | Only that user's config |
+
+---
+
+## State Machine Overview
+
+```
+ACCESS_SETTINGS → REVIEW_CURRENT → MODIFY_SETTINGS → SAVE_CHANGES → VERIFY_IMPACT
+        ↑                                  │
+        └──────────────────────────────────┘ (if save fails)
 ```
 
-**Confirmation required:** User will be prompted to confirm.
+---
 
-**If deletion fails:**
-- Check error message
-- Usually means configurations still exist
-- Delete all configurations first, then retry
+## State: ACCESS_SETTINGS
 
-### Important Considerations
+### Indicators
+- User wants to modify server template settings
+- May or may not be in configure modal already
+- Need to navigate to Settings tab
 
-#### Config Template Changes
+### Context Check
+```
+page.full_path: Check if on /features with configure action
+data.activeTab: Check current tab
+data.userRole or data.canEditServerSettings: Verify permission
+```
 
-**Impact:** Modifying `config_template` does NOT automatically update existing user configurations.
+### Goal
+Navigate to the Settings tab of the configure modal.
 
-- Existing configs retain their saved values
-- New placeholder variables won't have values in old configs
-- Users may need to reconfigure after template changes
+### Actions
 
-**Recommendation:** If adding new required variables:
-1. Update `variable_schema` to include new variables
-2. Update `ui_schema` to add form fields
-3. Notify users to update their configurations
+**1. Verify permission first:**
 
-#### OAuth Changes
+Check context for user role indicators. If not visible, attempt navigation and observe result.
 
-**Impact:** Changing OAuth settings affects all users.
+**2. Open configure modal (if not already open):**
 
-- Toggling `oauth_enabled` to `true` requires users to complete OAuth
-- Changing `oauth_handler_type` invalidates existing OAuth connections
-- Modifying `oauth_scopes` may require re-authorization
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "configure-server-[SERVER_ID]"}}
+```
 
-**Recommendation:**
-- Plan OAuth changes carefully
-- Notify users before making changes
-- Be prepared for users to need to reconnect
+**3. Navigate to Settings tab:**
 
-#### UI Schema Changes
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "settings-tab"}}
+```
 
-**Impact:** Affects how the configuration form is displayed.
+**4. Verify access:**
+- If successful: `data.activeTab` should be "settings"
+- If denied: User will be redirected back to "configs" tab
 
-- Adding new sections allows configuration of new variables
-- Removing sections hides fields but doesn't delete data
-- Changing field types may cause display issues
+**5. If access denied:**
 
-**Best Practice:**
-1. Update `variable_schema` first (add new property)
-2. Then update `ui_schema` (add corresponding form field)
-3. Maintain field name consistency
+```
+The Settings tab is restricted to super_admin users.
 
-### Common Pitfalls
+If you need to modify the server template, please contact an administrator.
 
-1. **JSON validation** - Config template and UI schema must be valid JSON
-2. **Placeholder consistency** - New placeholders need matching variable_schema entries
-3. **OAuth scope format** - Comma-separated, NO spaces
-4. **Existing configs** - Changes don't retroactively apply to saved configurations
-5. **Delete requires empty configs** - Remove all user configurations first
-6. **Super admin only** - Regular users cannot access settings tab
+If you want to modify your own configuration (credentials, settings), I can help with that on the Configure tab instead.
+```
 
-### Rollback Strategy
+### Transitions
+- Settings tab accessible → **REVIEW_CURRENT**
+- Access denied → Inform user, offer alternatives
+- Modal open failed → Check server ID, retry
 
-If a change causes issues:
+---
 
-1. Keep note of original values before making changes
-2. Use same edit flow to restore previous values
-3. For major issues, may need to:
-   - Delete affected user configurations
-   - Recreate server template from scratch
-   - Have users reconfigure
+## State: REVIEW_CURRENT
 
-### Validation Checklist
+### Indicators
+- On Settings tab
+- Can see current server template configuration
+- Need to understand what exists before modifying
 
-Before saving server template changes:
-- [ ] Config template JSON is valid
-- [ ] UI schema JSON is valid
-- [ ] All placeholder variables have corresponding variable_schema entries
-- [ ] All UI schema fields have corresponding variable_schema properties
-- [ ] OAuth settings are complete if oauth_enabled
-- [ ] Impact on existing configurations is understood
+### Context Check
+```
+data.serverSettingsForm: Current template settings
+data.serverTemplate: Full template details including:
+  - display_name
+  - description
+  - config_template_json
+  - variable_schema_json
+  - ui_schema_json
+  - oauth_enabled
+  - oauth_handler_type (if OAuth)
+  - oauth_scopes_defined_by_admin (if OAuth)
+```
+
+### Goal
+Understand current configuration and confirm what user wants to change.
+
+### Actions
+
+**1. Summarize current settings:**
+
+```
+**Current template settings for [Server Name]:**
+
+- **Display Name:** [value]
+- **Description:** [value]
+- **Command:** [npx/uvx/docker]
+- **Variables:** [list of {{placeholders}}]
+- **OAuth:** [Enabled/Disabled]
+
+What would you like to modify?
+```
+
+**2. Clarify scope of changes:**
+
+If user's request is ambiguous:
+```
+Just to confirm - you want to modify the server template itself, which will affect:
+- How the server runs (command, arguments)
+- What variables are available for configuration
+- How the configuration form appears to users
+
+Existing user configurations will NOT be automatically updated - users may need to reconfigure.
+
+Is this what you intend?
+```
+
+### Transitions
+- User confirms changes → **MODIFY_SETTINGS**
+- User wants different kind of change → Redirect to appropriate protocol
+- User needs to understand impact first → Explain, then proceed
+
+---
+
+## State: MODIFY_SETTINGS
+
+### Indicators
+- On Settings tab
+- Know what changes are needed
+- Ready to update form fields
+
+### Context Check
+```
+data.serverSettingsForm: Current values (what we're changing)
+elements: Form elements for each setting
+```
+
+### Goal
+Apply the requested changes to the server template.
+
+### Available Fields
+
+| Field | Type | Impact of Change |
+|-------|------|------------------|
+| `display_name` | string | UI only - safe to change |
+| `description` | string | UI only - safe to change |
+| `config_template_json` | JSON string | **High impact** - may break existing configs |
+| `variable_schema_json` | JSON string | **High impact** - affects configuration form |
+| `ui_schema_json` | JSON string | **Medium impact** - affects form display |
+| `oauth_enabled` | boolean | **High impact** - changes auth flow |
+| `oauth_handler_type` | string | **High impact** - changes OAuth provider |
+| `oauth_scopes_defined_by_admin` | string | **Medium impact** - may require re-auth |
+
+### Actions
+
+**For simple changes (display_name, description):**
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "mcp", "updates": {"serverSettingsForm": {"display_name": "New Display Name", "description": "Updated description"}}}}
+```
+
+**For config_template changes:**
+
+Be extremely careful. Changes to placeholders affect variable schema.
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "mcp", "updates": {"serverSettingsForm": {"config_template_json": "{\"mcpServers\": {\"key\": {\"command\": \"npx\", \"args\": [...], \"env\": {...}}}}"}}}}
+```
+
+**For variable_schema changes:**
+
+Ensure consistency with config_template placeholders.
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "mcp", "updates": {"serverSettingsForm": {"variable_schema_json": "{\"required\": [...], \"properties\": {...}}"}}}}
+```
+
+**For OAuth changes:**
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "mcp", "updates": {"serverSettingsForm": {"oauth_enabled": true, "oauth_handler_type": "google", "oauth_scopes_defined_by_admin": "https://www.googleapis.com/auth/drive,https://www.googleapis.com/auth/gmail.modify"}}}}
+```
+
+### Consistency Requirements
+
+When modifying templates, maintain these relationships:
+
+1. **Every `{{placeholder}}` in config_template** must have:
+   - A matching property in variable_schema
+   - A matching section in ui_schema
+
+2. **Every required field in variable_schema** must:
+   - Exist in config_template
+   - Have a section in ui_schema
+
+3. **OAuth scopes** must be comma-separated with NO spaces
+
+### Transitions
+- Changes applied to form → **SAVE_CHANGES**
+- Validation error in form → Fix and retry
+- User changes mind → Discard changes (refresh or close modal)
+
+---
+
+## State: SAVE_CHANGES
+
+### Indicators
+- Form has been modified
+- Changes are ready to persist
+- Update button is available
+
+### Context Check
+```
+elements: Should include update/save button
+data.serverSettingsForm: Should show modified values
+```
+
+### Goal
+Save template changes and verify success.
+
+### Actions
+
+**1. Click update:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "update-server-btn"}}
+```
+
+**2. Verify tool result:**
+- `success: true` → Changes saved
+- `success: false` → Read error carefully
+
+**3. Handle common errors:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Invalid JSON" | Malformed config_template or schema | Validate JSON structure |
+| "Invalid variable schema" | Mismatch between template and schema | Ensure all placeholders have schema entries |
+| "Invalid OAuth configuration" | Missing handler or scopes | Provide complete OAuth settings |
+
+### Transitions
+- Save successful → **VERIFY_IMPACT**
+- Save failed → Return to **MODIFY_SETTINGS** with error context
+
+---
+
+## State: VERIFY_IMPACT
+
+### Indicators
+- Template changes have been saved
+- Need to understand downstream effects
+- May need to notify users
+
+### Goal
+Confirm changes and inform user of any required follow-up.
+
+### Actions
+
+**1. Confirm the change:**
+
+```
+✅ **Server template updated successfully.**
+
+**Changes applied:**
+- [List what was changed]
+```
+
+**2. Explain impact on existing configurations:**
+
+```
+**Important - Impact on existing configurations:**
+
+[If config_template changed:]
+- Existing configurations may need to be updated
+- New placeholders won't have values in old configs
+- Users should review and reconfigure if needed
+
+[If OAuth settings changed:]
+- Users will need to re-authorize with [Provider]
+- Existing OAuth tokens may be invalidated
+
+[If only display_name/description changed:]
+- No impact on existing configurations
+```
+
+**3. Suggest next steps:**
+
+```
+**Recommended next steps:**
+1. Test the server with a fresh configuration
+2. Notify users who have existing configurations
+3. Update any documentation referencing old settings
+```
+
+### Transitions
+- User acknowledges → Complete (close modal or navigate away)
+- User wants to verify → Help test with new configuration
+
+---
+
+## Special Case: Deleting a Server Template
+
+### Prerequisites
+- User has super_admin role
+- ALL user configurations for this server must be deleted first
+
+### Process
+
+**1. Warn user:**
+
+```
+⚠️ **Deleting a server template is permanent and cannot be undone.**
+
+Before deletion:
+- All user configurations must be removed
+- Any workflows using this server's tools will break
+
+Are you sure you want to proceed?
+```
+
+**2. If configurations exist:**
+
+```
+This server has [N] configuration(s) that must be deleted first:
+- [Config 1] (user: [email])
+- [Config 2] (user: [email])
+
+Would you like me to help delete these configurations first?
+```
+
+**3. Execute deletion:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "delete-server-btn"}}
+```
+
+**4. Handle confirmation dialog if present.**
+
+**5. Verify deletion:**
+- Server should no longer appear in `data.servers`
+- Return to main features list
+
+---
+
+## Common Pitfalls
+
+1. **Changing placeholders without updating schemas**: Creates broken configuration forms.
+
+2. **Expecting existing configs to auto-update**: They don't - users must reconfigure.
+
+3. **OAuth scope format**: Must be comma-separated with NO spaces between scopes.
+
+4. **Deleting with existing configs**: Will fail - delete configs first.
+
+5. **Testing only in settings**: Always test with a real configuration after template changes.

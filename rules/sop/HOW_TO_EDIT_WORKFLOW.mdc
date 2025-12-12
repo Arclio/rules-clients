@@ -1,152 +1,325 @@
 ---
-description: "Standard Operating Procedure: Editing a workflow. Tactical steps for the agent to follow when modifying an existing workflow."
+description: "Operational Protocol: Editing a workflow. State-based guidance for helping users modify existing workflows."
 globs: []
 alwaysApply: false
 ---
-## SOP: Edit Workflow
 
-**Context:** This rule is loaded when the user is on the workflow edit page. The agent is already viewing/editing a specific workflow.
+# Protocol: Edit Workflow
 
-### Step 1: Understand What Needs to Change
+**Purpose:** Guide the user through modifying an existing workflow's metadata, steps, or logic.
 
-Clarify with the user:
-- What aspect of the workflow needs modification (metadata, steps, logic)?
+**Prerequisites:**
+- User is on `/workflow-edit/:id` page
+- An existing workflow is loaded for editing
+- User has identified what they want to change
+
+---
+
+## State Machine Overview
+
+```
+UNDERSTAND → REVIEW → MODIFY → VALIDATE → SAVE → COMPLETE
+    ↑           │         │
+    └───────────┴─────────┘ (can return if issues found)
+```
+
+---
+
+## State: UNDERSTAND
+
+### Indicators
+- User has requested a change to the workflow
+- The specific modification needed is not yet clear
+- You need to clarify what aspect to modify
+
+### Context Check
+- Verify current page via `page.full_path` (should be `/workflow-edit/*`)
+- Check `data.workflowEditState` for current workflow content
+
+### Goal
+Clarify exactly what the user wants to modify.
+
+### Actions
+
+**1. Ask clarifying questions:**
+- What aspect needs modification (metadata, steps, logic)?
 - Are they adding, removing, or modifying steps?
-- Do they want to change workflow behavior or just fix an error?
+- Is this a fix for an error or a feature addition?
 
-### Step 2: Review Current Workflow
+**2. Categories of changes:**
 
-**Available in context:**
-- `title` - Workflow name
-- `description` - One-sentence summary
-- `scenario` - Human-readable step breakdown (what the workflow does in plain English)
-- `content` - The full `.wf.md` workflow definition
+| Category | What it affects | Complexity |
+|----------|----------------|------------|
+| Metadata | Title, description, scenario | Simple |
+| Step parameters | Input values within a step | Moderate |
+| Step logic | Adding/removing/reordering steps | Complex |
+| Variable references | Output extraction and references | Requires validation |
 
-**Action:** Read the current workflow content to understand its structure before making changes. Pay attention to:
-- What tools are being used
-- How steps reference each other's outputs
-- Whether it uses parameters, iterators, or branches
+### Transitions
+- User clarifies what to change → **REVIEW**
+- Already clear from initial request → **REVIEW**
 
-### Step 3: Make the Requested Modification
+---
+
+## State: REVIEW
+
+### Indicators
+- Modification type is understood
+- Need to examine current workflow structure
+- Haven't yet identified what specifically to edit
+
+### Context Check
+```
+data.workflowEditState.content: Current workflow .wf.md content
+data.workflowEditState.title: Current title
+data.workflowEditState.scenario: Current category
+```
+
+### Goal
+Understand the current workflow structure before making changes.
+
+### Actions
+
+**1. Read current workflow from context:**
+- Examine `data.workflowEditState.content`
+- Identify frontmatter, steps, variables
+
+**2. Map the workflow structure:**
+- List all steps and their tools
+- List all variable definitions (outputs)
+- List all variable references (inputs using `${...}`)
+
+**3. Identify the section(s) to modify:**
+- For metadata: frontmatter or top-level fields
+- For steps: specific `## Step N` section
+- For variables: output definitions or input references
+
+### Transitions
+- Section to modify identified → **MODIFY**
+- Need to verify tool behavior → Load `WORKFLOW_TOOLING` then **MODIFY**
+- Current structure is unclear → Ask user for clarification
+
+---
+
+## State: MODIFY
+
+### Indicators
+- Current workflow structure is understood
+- Ready to make the requested modification
+- Know which section(s) need to change
+
+### Context Check
+- Reference `WORKFLOW_SYNTAX` for correct format if needed
+- Check tool signatures if changing tool parameters
+
+### Goal
+Make the specific modification requested.
+
+### Actions
 
 **For metadata changes (title, description, scenario):**
 
-Use `ui_fill_state` to update specific fields:
-
-```json
-{
-  "store_name": "workflow",
-  "state_path": "workflowEditState",
-  "updates": {
-    "title": "New Title"
-  }
-}
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowEditState": {"title": "New Title"}}}}
 ```
 
-**Important:** Only include the fields you're changing. Other fields will be preserved.
+**Important:** Only include fields you're changing. Other fields are preserved.
 
-**For workflow content changes (steps, logic):**
+**For workflow content changes:**
 
 1. Get the current content from context
 2. Modify the specific section
 3. Submit the complete updated content:
 
-```json
-{
-  "store_name": "workflow",
-  "state_path": "workflowEditState",
-  "updates": {
-    "content": "---\ntitle: ...\n--- \n## Step 1: ...\n..."
-  }
-}
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowEditState": {"content": "---\ntitle: ...\n--- \n## Step 1: ...\n..."}}}}
 ```
 
-### Step 4: Validate the Changes
+**Common modification patterns:**
 
-**⚠️ VALIDATION CHECKLIST (Run through this BEFORE submitting):**
+| Task | Approach |
+|------|----------|
+| Rename workflow | Update `title` field only |
+| Change category | Update `scenario` field only |
+| Add new step | Append to content with proper numbering |
+| Modify step inputs | Update specific step's **Inputs:** section |
+| Change tool | Update **Tool:** line and verify new signature |
+| Fix variable reference | Update `${...}` expression |
+| Remove step | Remove entire `## Step N` section, renumber remaining |
 
-| Check | What to Verify |
-|-------|----------------|
-| ✅ Variable references | All `${stepN.var}` references point to existing outputs |
-| ✅ Scope rules | Child step outputs not accessed from outside containers |
-| ✅ Step numbering | Steps are numbered sequentially (1, 2, 3...) |
-| ✅ Required fields | Each step has either `**Tool:**` or `**Type:**` |
-| ✅ Parameters declared | Every `${workflow.params.X}` has matching entry in `parameters:` block |
-| ✅ LLM model valid | Every `llm` step has `model: "anthropic/claude-sonnet-4-5"` (or other valid model) |
-| ✅ LLM inputs complete | Every `llm` step has `system_prompt`, `user_prompt`, AND `model` |
-| ✅ Frontmatter valid | YAML syntax is correct, required fields present |
+### Transitions
+- Modification applied → **VALIDATE**
+- Need to verify tool signature → Query tool, then return to **MODIFY**
+- Unclear how to implement change → Ask user for clarification
 
-**If you removed a step:**
-- Check that no later steps reference its outputs
-- Update step numbers if needed
+---
 
-**If you added an LLM step:**
-- Include ALL three required inputs: `system_prompt`, `user_prompt`, `model`
-- Use a valid model from `WORKFLOW_TOOLING`
+## State: VALIDATE
 
-**If you modified workflow parameters:**
-- Ensure `parameters:` block in frontmatter matches all `${workflow.params.*}` usage
+### Indicators
+- Modification has been applied to the form
+- Need to verify the changes are correct
+- Haven't yet confirmed syntax and references are valid
 
-**Reference:** Check against `WORKFLOW_SYNTAX`, `WORKFLOW_PATTERNS`, and `WORKFLOW_TOOLING` as needed.
-
-### Step 5: After Saving
-
-- Changes are applied immediately
-- Inform user what you changed
-- If the user wants to test, you can navigate to the execution page
-
-### Common Editing Tasks
-
-**Task: Rename a workflow**
-```json
-{
-  "store_name": "workflow",
-  "state_path": "workflowEditState",
-  "updates": {
-    "title": "New Workflow Name"
-  }
-}
+### Context Check
+```
+data.workflowEditState.content: Updated content
+data.workflowEditState.title: Updated title (if changed)
 ```
 
-**Task: Update the scenario (human-readable summary)**
+### Goal
+Verify the modifications maintain workflow validity.
 
-The `scenario` field is a **human-readable step breakdown** of what the workflow does. When editing a workflow, update the scenario to match any changes you make to the steps.
+### Actions
 
-```json
-{
-  "store_name": "workflow",
-  "state_path": "workflowEditState",
-  "updates": {
-    "scenario": "1. Fetch all calendar events for the week\n2. Analyze events and identify key meetings\n3. Generate formatted summary\n4. Create Google Doc with results"
-  }
-}
+**1. Validation checklist:**
+
+- [ ] If steps modified: All variable references are still valid
+- [ ] If step added: It has required fields (`**Tool:**` or `**Type:**`)
+- [ ] If step removed: No later steps reference its outputs
+- [ ] If tool changed: New tool exists and has been verified
+- [ ] Frontmatter is still valid (if touched)
+- [ ] Step numbering is sequential
+
+**2. If adding a new tool, verify it exists:**
+
+```
+TOOL_CALL: {"name": "get_mcp_tool_schema", "parameters": {"server_name": "server_name", "tool_name": "tool_name"}}
 ```
 
-**Why this matters:** Users who don't understand workflow syntax rely on the scenario to understand what the workflow does.
+**3. If validation fails:**
+- Identify the specific issue
+- Return to **MODIFY** to fix
 
-**Task: Add a new step**
-1. Read current content
-2. Append new step with proper numbering
-3. Update content field with modified version
+### Transitions
+- All validations pass → **SAVE**
+- Validation fails → Return to **MODIFY**
+- Missing information → Query tools or ask user
 
-**Task: Modify an existing step**
-1. Read current content
-2. Locate and modify the target step
-3. Update content field with modified version
+---
 
-**Task: Fix a variable reference**
-1. Identify the broken reference
-2. Update it to point to the correct output
+## State: SAVE
+
+### Indicators
+- Modifications are validated
+- Ready to persist changes
+- Save button should be available
+
+### Context Check
+```
+elements: Should include save/update button
+data.workflowEditState: Should show modified values
+```
+
+### Goal
+Save the modified workflow and verify success.
+
+### Actions
+
+**1. Click the save button:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-workflow-save-btn"}}
+```
+
+**2. Verify result:**
+
+Check the tool result:
+- `success: true` → Proceed to **COMPLETE**
+- `success: false` → Read error message
+
+**3. If save failed:**
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| "Invalid syntax" | Malformed workflow content | Check format in WORKFLOW_SYNTAX |
+| "Variable not found" | Dangling reference | Check step outputs |
+| "Invalid tool" | Tool name typo or removed | Verify tool exists |
+
+### Transitions
+- Save successful → **COMPLETE**
+- Save failed with fixable error → Return to **MODIFY**
+- Save failed with unclear error → Return to user with status
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- Changes have been saved
+- Workflow is updated in the system
+
+### Actions
+
+**1. Confirm what was changed:**
+
+```
+✅ **Workflow updated successfully!**
+
+**Changes made:**
+- [List specific changes]
+
+**Would you like to:**
+- Run the workflow to test the changes?
+- Make additional modifications?
+```
+
+**2. Offer logical next action:**
+- Test changes → Navigate to execution page
+- Continue editing → Return to **UNDERSTAND**
+- Done → User can navigate away
+
+---
+
+## Reference: Common Edit Patterns
+
+### Renaming a Workflow
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowEditState": {"title": "New Workflow Name"}}}}
+```
+
+### Changing Category
+
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowEditState": {"scenario": "reporting"}}}}
+```
+
+### Fixing a Variable Reference
+
+1. Identify the broken reference in content
+2. Update it to point to correct output
 3. Submit updated content
 
-### Common Pitfalls to Avoid
+### Adding a Step
 
-1. **Don't clear other fields** - Only update what needs to change
-2. **Don't break variable chains** - If you remove a step, check what depends on it
-3. **Don't forget to test tools** - If you're adding a new tool, verify it works
-4. **Don't submit partial content** - When editing content, submit the full `.wf.md`
-5. **Don't skip validation** - Catch errors before saving
-6. **Don't forget `parameters:`** - If adding `${workflow.params.X}`, ensure X is declared in frontmatter
-7. **Don't forget `model:` in LLM steps** - Every `llm` step needs `model: "anthropic/claude-sonnet-4-5"` (or other valid model)
-8. **Don't use Brave Search for web research** - Use `llm` tool instead (proper output format)
-9. **Don't forget to update the scenario** - If you changed what the workflow does, update the scenario to match
+1. Read current content
+2. Append new step with proper numbering:
+   ```markdown
+   ## Step N: New Step Title
+
+   **Tool:** mcp_server_tool
+   **Inputs:**
+   - `param`: ${previous.output}
+   **Outputs:**
+   - `result` (type): $.path
+   ```
+3. Submit complete updated content
+
+---
+
+## Common Pitfalls
+
+1. **Clearing other fields**: Only update what needs to change—other fields are preserved.
+
+2. **Breaking variable chains**: If you remove a step, check what depends on its outputs.
+
+3. **Not testing tools**: If adding a new tool, verify it works before saving.
+
+4. **Submitting partial content**: When editing content, submit the full `.wf.md`, not fragments.
+
+5. **Skipping validation**: Catch errors before saving—saves time and frustration.
+
+6. **Wrong step numbering**: After adding/removing steps, ensure sequential numbering.
+
+7. **Not verifying save succeeded**: Always check the tool result before confirming to user.

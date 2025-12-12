@@ -1,124 +1,315 @@
 ---
-description: "Standard Operating Procedure: Viewing MCP server tools and their parameters. Tactical steps for the agent to follow when helping users explore available tools."
+description: "Operational Protocol: Viewing MCP Server tools. State-based guidance for exploring what tools an MCP server provides."
 globs: []
 alwaysApply: false
 ---
 
-## SOP: View MCP Server Tools
+# Protocol: View MCP Server Tools
 
-**Context:** User wants to see what tools an MCP server provides before using them in workflows.
+**Purpose:** Help users explore and understand what tools an MCP server provides before using them in workflows.
 
-**Note:** The Tools modal is read-only. Tool availability is controlled at the server level (enable/disable the server), not at individual tool level.
+**Prerequisites:**
+- An MCP server template exists
+- User wants to see available tools (not necessarily configured/enabled yet)
 
-### Step 1: Open Tools Modal
+---
 
-**Precondition:** An MCP server exists on the `/features` page.
+## State Machine Overview
 
-**Action:** Click "View Tools" on the server card.
-
-```json
-ui_trigger_click({"element_id": "view-tools-server-{server_id}"})
+```
+OPEN_TOOLS → BROWSE_LIST → INSPECT_TOOL → USE_GUIDANCE
+      ↑            │
+      └────────────┘ (browse more tools)
 ```
 
-### Step 2: Review Tool List
+---
 
-The modal displays all available tools for the server with:
-- Tool name
-- Tool description
-- Parameter count
+## State: OPEN_TOOLS
 
-**Context will include:**
-```json
-{
-  "tools": [
-    {
-      "name": "tool_name",
-      "description": "What the tool does",
-      "parameter_count": 3
-    }
-  ],
-  "tool_count": 5,
-  "is_loading": false,
-  "error": null
-}
+### Indicators
+- User wants to see tools for a specific server
+- Tools modal is not yet open
+- On `/features` page or navigable to it
+
+### Context Check
+```
+page.full_path: Should be on /features
+data.servers: List of available servers
+elements: Should include "view-tools-server-[ID]" buttons
 ```
 
-### Step 3: Expand Tool Parameters
+### Goal
+Open the tools modal for the requested server.
 
-To see a tool's parameters, click to expand:
+### Actions
 
-```json
-ui_trigger_click({"element_id": "expand-tool-{tool_index}"})
+**1. Identify the correct server:**
+
+From context or user request, determine which server's tools to view.
+Check `data.servers` for available servers and their IDs.
+
+**2. Open tools modal:**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "view-tools-server-[SERVER_ID]"}}
 ```
 
-**Expanded tool shows:**
-- Parameter name
-- Parameter type (string, number, boolean, array, object)
-- Whether parameter is required
-- Parameter description
+**3. Verify modal opened:**
+- Context should show tools modal state
+- `data.tools` or similar should populate with tool list
 
-### Step 4: Understand Tool Signatures
+### Handling "No Tools" Scenarios
 
-When using tools in workflows, you need:
+If tool list is empty or fails to load:
 
-1. **Exact tool name** - Use the `name` field exactly as shown
-2. **Required parameters** - All required params must be provided
-3. **Parameter types** - Values must match expected types
+| Situation | Cause | User Guidance |
+|-----------|-------|---------------|
+| Empty list | Server not configured | "Configure the server with credentials first" |
+| Loading error | Server not enabled | "Enable the server to load tools" |
+| Connection error | Server unreachable | "Check server status and configuration" |
 
-**Example workflow step using an MCP tool:**
-```markdown
-**Tool:** `google_workspace_gmail_send_email`
+### Transitions
+- Tools loaded → **BROWSE_LIST**
+- No tools (not configured) → Guide to configuration
+- Error loading → Diagnose and guide user
+
+---
+
+## State: BROWSE_LIST
+
+### Indicators
+- Tools modal is open
+- Tool list is visible
+- User is exploring available tools
+
+### Context Check
+```
+data.tools: Array of available tools
+data.toolCount: Total number of tools
+data.isLoading: Should be false
+```
+
+### Goal
+Help user understand what tools are available and their purposes.
+
+### Actions
+
+**1. Summarize available tools:**
+
+```
+**[Server Name] provides [N] tools:**
+
+| Tool | Purpose |
+|------|---------|
+| `tool_name_1` | [brief description] |
+| `tool_name_2` | [brief description] |
+| ... | ... |
+
+Would you like details on any specific tool?
+```
+
+**2. Categorize tools if helpful:**
+
+For servers with many tools, group by function:
+```
+**Reading/Query Tools:**
+- `get_*` tools for fetching data
+
+**Writing/Action Tools:**
+- `create_*`, `update_*`, `delete_*` tools for modifications
+
+**Utility Tools:**
+- Helper functions and utilities
+```
+
+**3. Respond to user questions:**
+
+If user asks about specific capabilities:
+```
+User: "Can this server send emails?"
+→ Search tool list for email-related tools
+→ "Yes, `gmail_send_email` can send emails. Would you like to see its parameters?"
+```
+
+### Transitions
+- User wants tool details → **INSPECT_TOOL**
+- User satisfied with overview → **USE_GUIDANCE** or close modal
+- User wants different server → Close modal, return to **OPEN_TOOLS**
+
+---
+
+## State: INSPECT_TOOL
+
+### Indicators
+- User wants details about a specific tool
+- Need to show parameters and usage information
+- May need to expand tool in UI
+
+### Context Check
+```
+elements: May include "expand-tool-[INDEX]" buttons
+data.tools[index]: Tool details including inputSchema
+```
+
+### Goal
+Show complete tool information including parameters.
+
+### Actions
+
+**1. Expand tool details (if UI requires):**
+
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "expand-tool-[INDEX]"}}
+```
+
+**2. Present tool information:**
+
+```
+**Tool: `[full_tool_name]`**
+
+**Description:** [description from schema]
+
+**Parameters:**
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| param1 | string | Yes | [description] |
+| param2 | number | No | [description] |
+| param3 | array | No | [description] |
+
+**Example usage in workflow:**
+\`\`\`markdown
+**Tool:** `[server]__[tool_name]`
 **Inputs:**
-- to: "${recipient_email}"
-- subject: "Meeting Reminder"
-- body: "Your meeting starts in 10 minutes."
+- param1: "value"
+- param2: 42
+\`\`\`
 ```
 
-### Step 5: Refresh Tools (if needed)
+**3. Provide context-specific guidance:**
 
-If the server was recently configured or updated:
+Based on tool type:
+- **Query tools**: "Returns data that can be used in subsequent steps"
+- **Action tools**: "Performs an action - consider error handling"
+- **Tools with complex params**: "This parameter accepts [format/structure]"
 
-```json
-ui_trigger_click({"element_id": "refresh-tools-btn"})
+### Transitions
+- User wants another tool → Return to **BROWSE_LIST** or inspect different tool
+- User wants to use tool → **USE_GUIDANCE**
+- User done exploring → Close modal
+
+---
+
+## State: USE_GUIDANCE
+
+### Indicators
+- User understands what tools are available
+- Ready to use tools in a workflow or direct call
+- May need guidance on next steps
+
+### Goal
+Provide actionable guidance on using the discovered tools.
+
+### Actions
+
+**1. For workflow usage:**
+
+```
+To use `[tool_name]` in a workflow:
+
+\`\`\`markdown
+## Step: [Descriptive Name]
+**Tool:** `[server]__[tool_name]`
+**Inputs:**
+- required_param: "${variable_or_value}"
+- optional_param: "literal_value"
+**Outputs:**
+- result_variable: "$.response_field"
+\`\`\`
+
+Would you like me to help create a workflow using this tool?
 ```
 
-This fetches the latest tool list from the running MCP server.
+**2. For direct testing:**
 
-### Step 6: Close Modal
+```
+To test this tool directly, I can call it now:
 
-```json
-ui_trigger_click({"element_id": "close-tools-modal-btn"})
+\`\`\`
+TOOL_CALL: {"name": "[server]__[tool_name]", "parameters": {"param": "value"}}
+\`\`\`
+
+Would you like me to test it with specific parameters?
 ```
 
-### Common Scenarios
+**3. Important reminders:**
 
-#### Tools Not Loading
-If tools fail to load:
-- **Server not enabled** - Enable the server first
-- **No configuration** - Add credentials via Configure modal
-- **Server error** - Check server status, may need restart
+```
+**Remember:**
+- Use the full tool name: `[server]__[tool_name]` (with double underscore)
+- Required parameters must always be provided
+- Check tool results for success/error status
+```
 
-#### Using Tools in Workflows
+### Transitions
+- User wants workflow help → Offer to navigate to workflow creation
+- User wants to test tool → Execute tool call
+- User done → Close modal, offer next actions
 
-Once you know the available tools:
-1. Reference the tool by exact name in workflow steps
-2. Provide all required parameters
-3. Handle outputs appropriately
+---
 
-**Reference:** See `WORKFLOW_SYNTAX` and `WORKFLOW_TOOLING` rules for workflow step syntax.
+## Refreshing Tool List
 
-### Tool Information Reference
+If the server was recently configured or updated, tools may be stale.
 
-| Field | Description |
-|-------|-------------|
-| name | Exact identifier to use in workflows |
-| description | What the tool does, often includes usage hints |
-| inputSchema.properties | Available parameters |
-| inputSchema.required | Parameters that must be provided |
+### Actions
 
-### Note on Tool Availability
+**1. Click refresh:**
 
-- Tools are provided by the MCP server, not created in Arclio
-- Tool list depends on server configuration and capabilities
-- Some servers expose different tools based on OAuth scopes
-- Server must be enabled and running to list tools
+```
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "refresh-tools-btn"}}
+```
+
+**2. Wait for reload and verify:**
+- Tool list should update
+- Count may change
+- New tools may appear
+
+---
+
+## Tool Reference Quick Guide
+
+### Common Tool Patterns
+
+| Pattern | Meaning | Example |
+|---------|---------|---------|
+| `get_*` | Retrieve data | `gmail_get_message` |
+| `list_*` | Get multiple items | `drive_list_files` |
+| `create_*` | Create new resource | `sheets_create_spreadsheet` |
+| `update_*` | Modify existing | `docs_update_content` |
+| `delete_*` | Remove resource | `calendar_delete_event` |
+| `send_*` | Transmit data | `slack_send_message` |
+| `search_*` | Query with filters | `gmail_search_messages` |
+
+### Parameter Type Handling
+
+| Type | Workflow Format | Example |
+|------|-----------------|---------|
+| string | `"value"` or `"${var}"` | `"Hello world"` |
+| number | `42` or `${count}` | `100` |
+| boolean | `true` / `false` | `true` |
+| array | `["a", "b"]` | `["user1@example.com"]` |
+| object | `{"key": "value"}` | `{"filter": "unread"}` |
+
+---
+
+## Common Pitfalls
+
+1. **Forgetting server prefix**: Always use `server__tool_name`, not just `tool_name`.
+
+2. **Assuming tools are available**: If server isn't configured/enabled, tools won't load.
+
+3. **Ignoring required parameters**: Tool calls will fail without required params.
+
+4. **Wrong parameter types**: String `"42"` vs number `42` matters for some tools.
+
+5. **Not refreshing after config changes**: Tool list may be cached - refresh if expected tools are missing.
