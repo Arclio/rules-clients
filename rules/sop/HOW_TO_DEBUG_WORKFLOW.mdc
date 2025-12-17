@@ -47,6 +47,47 @@ alwaysApply: false
 
 ---
 
+## Planning
+
+This protocol is multi-step and stateful. When it is loaded, your **next assistant message must include a plan** before any tool call.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Understand a workflow run result and take the right next action",
+  "current_state": {
+    "page": "/workflow-execute/…?state=complete",
+    "status": "success|failed"
+  },
+  "steps": [
+    {"id": "ASSESS", "status": "doing"},
+    {"id": "SUCCESS", "status": "todo"},
+    {"id": "FAILURE", "status": "todo"},
+    {"id": "SUMMARIZE", "status": "todo"},
+    {"id": "DIAGNOSE", "status": "todo"},
+    {"id": "FIX", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "If failed: choose rerun vs edit vs external fix (auth/config)",
+    "Confirm before rerun if the run has side effects"
+  ],
+  "verification": [
+    "For rerun: UI indicates a new run started",
+    "For edit: workflow editor opens and the Edit SOP is loaded"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes). Mark unused branch states as `done` with a short note (e.g., \"skipped\").
+
+---
+
 ## State: ASSESS
 
 ### Indicators
@@ -220,7 +261,7 @@ Propose a concrete fix for the failure.
 
 | Category | Fix Type | Action |
 |----------|----------|--------|
-| **Syntax** | Edit workflow | Navigate to edit page |
+| **Syntax** | Edit workflow | Open workflow editor (Edit SOP) |
 | **Reference** | Edit workflow | Fix variable names |
 | **Tool** | Re-run or Edit | Check inputs, retry, or fix params |
 | **Type** | Edit workflow | Fix extraction paths |
@@ -230,7 +271,7 @@ Propose a concrete fix for the failure.
 **2. For Re-run fixes:**
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "rerun-workflow-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "[RERUN_WORKFLOW_BUTTON_ID]"}}
 ```
 
 Or suggest the user try again with different parameters.
@@ -239,12 +280,12 @@ Or suggest the user try again with different parameters.
 
 ```
 This issue requires editing the workflow definition.
-Would you like me to navigate to the edit page and fix [specific issue]?
+Would you like me to open the workflow editor and fix [specific issue]?
 ```
 
 If user confirms:
 ```
-TOOL_CALL: {"name": "ui_navigate", "parameters": {"url": "/workflow-edit/{workflow_id}"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "[EDIT_WORKFLOW_BUTTON_ID]"}}
 ```
 
 Then follow `HOW_TO_EDIT_WORKFLOW` protocol.
@@ -256,8 +297,8 @@ If the error seems temporary (timeout, rate limit):
 - No workflow changes needed
 
 ### Transitions
-- Fix requires re-run → Execute action, go to **COMPLETE**
-- Fix requires edit → Navigate to edit page (ends this protocol)
+- Fix requires re-run → Click re-run. The page will transition to a running state (no SOP is loaded while executing). When it reaches `state=complete`, this Debug SOP will load again.
+- Fix requires edit → Open the workflow editor (Edit SOP loads; this protocol ends)
 - User declines fix → **COMPLETE**
 
 ---
@@ -341,7 +382,7 @@ Look in context for available actions:
 - `download_results` - Download output files
 - `start_new_run` - Run again with same/different parameters
 - `return_to_application` - Go back (if launched from an app)
-- `edit_workflow` - Navigate to edit page
+- `edit_workflow` - Open the workflow editor
 
 **2. Suggest appropriate next step:**
 

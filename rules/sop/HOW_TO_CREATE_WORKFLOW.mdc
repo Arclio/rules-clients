@@ -24,6 +24,45 @@ UNDERSTAND → DISCOVER_TOOLS → DRAFT → FORM_FILL → SAVE → COMPLETE
 
 ---
 
+## Planning
+
+This protocol is multi-step and stateful. When it is loaded, your **next assistant message must include a plan** before any tool call.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Create a workflow",
+  "current_state": {
+    "page": "/workflow?mode=create",
+    "have_requirements": false
+  },
+  "steps": [
+    {"id": "UNDERSTAND", "status": "doing"},
+    {"id": "DISCOVER_TOOLS", "status": "todo"},
+    {"id": "DRAFT", "status": "todo"},
+    {"id": "FORM_FILL", "status": "todo"},
+    {"id": "SAVE", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "Confirm requirements before drafting",
+    "Confirm before saving if execution will be impactful"
+  ],
+  "verification": [
+    "After SAVE, tool result shows success and the workflow appears in the workflows list"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes).
+
+---
+
 ## State: UNDERSTAND
 
 ### Indicators
@@ -71,32 +110,26 @@ Is that correct?
 - You haven't yet verified tool signatures and outputs
 
 ### Context Check
-- Check available MCP servers via `list_mcp_connections`
-- Note which servers might have relevant tools
+- Check the **Connected Integrations** section in the system message for available MCP servers and example tool names
+- Note which servers might have relevant tools for the workflow
 
 ### Goal
 Identify and verify the exact tool signatures needed for the workflow.
 
 ### Actions
 
-**1. List available MCP tools:**
-
-```
-TOOL_CALL: {"name": "list_mcp_connections", "parameters": {}}
-```
-
-**2. For each server that might have relevant tools, explore:**
+**1. For each server that might have relevant tools, explore:**
 
 ```
 TOOL_CALL: {"name": "get_mcp_tools_for_server", "parameters": {"server_name": "server_name_in_snake_case"}}
 ```
 
-**Important:** Server names MUST be in `snake_case` (e.g., `google_workspace`, not "Google Workspace").
+**Important:** Server names MUST match the server name shown in Connected Integrations (typically `snake_case`, e.g., `google_workspace`).
 
-**3. For each tool you plan to use, get the full schema:**
+**2. For each tool you plan to use, get the full schema:**
 
 ```
-TOOL_CALL: {"name": "get_mcp_tool_schema", "parameters": {"server_name": "server_name", "tool_name": "tool_name"}}
+TOOL_CALL: {"name": "get_mcp_tool_schema", "parameters": {"tool_name": "server_name__tool_name"}}
 ```
 
 **4. Test tools with sample inputs to verify:**
@@ -220,8 +253,7 @@ TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "upd
 
 ### Context Check
 ```
-elements: Should include submit button
-page_data.buttons.create: Check if enabled
+elements: Must include the create/save button for this modal (exact ID varies)
 ```
 
 ### Goal
@@ -229,16 +261,16 @@ Save the workflow and verify success.
 
 ### Actions
 
-**1. Check button state:**
+**1. Check button availability:**
 
-Look at `page_data.buttons.create`:
-- If `enabled: false` → Check `enabled_reason` to see what's missing
-- If `enabled: true` → Proceed to save
+Find the create/save button in `elements`:
+- If the button is missing or `enabled: false`, STOP and determine what is missing from `data` (or ask the user).
+- If `enabled: true`, proceed.
 
 **2. Click the save button:**
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "create-workflow-submit-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "[CREATE_WORKFLOW_SUBMIT_BUTTON_ID]"}}
 ```
 
 **3. Verify result:**
@@ -293,64 +325,11 @@ Common errors and fixes:
 
 ---
 
-## Reference: Workflow Syntax Templates
-
-### Frontmatter
-
-```yaml
----
-title: "Workflow Title"
-description: "What this workflow does"
-version: "2.1"
-autonomous: true
----
-```
-
-### Step with MCP Tool
-
-```markdown
-## Step 1: Fetch Data
-
-**Tool:** mcp_server-name_tool_name
-**Inputs:**
-- `param1`: "value"
-- `param2`: ${previous_step.output}
-**Outputs:**
-- `data` (object): $.result.data
-```
-
-### Step with LLM
-
-```markdown
-## Step 2: Analyze Results
-
-**Type:** llm
-**Inputs:**
-- `prompt`: "Analyze this data: ${step1.data}"
-**Outputs:**
-- `analysis` (string): The analysis result
-```
-
-### Conditional Step
-
-```markdown
-## Step 3: Conditional Processing
-
-**Type:** conditional
-**Condition:** ${step2.analysis.needs_processing} == true
-**If True:**
-  ## Step 3.1: Process Data
-  **Tool:** processor_tool
-  ...
-```
-
----
-
 ## Common Pitfalls
 
 1. **Skipping tool verification**: Always test tools before writing workflow—you need exact signatures.
 
-2. **Using wrong tool name format**: MCP tool names are `mcp_{server}_{tool}` with underscores for spaces.
+2. **Using wrong tool name format**: MCP tool names are `server_name__tool_name` (double underscore), e.g., `supabase__execute_sql`.
 
 3. **Dangling variable references**: Every `${stepN.var}` must point to a defined output.
 

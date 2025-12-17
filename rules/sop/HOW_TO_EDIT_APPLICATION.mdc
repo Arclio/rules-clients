@@ -25,6 +25,45 @@ UNDERSTAND → REVIEW → MODIFY → VALIDATE → SAVE → COMPLETE
 
 ---
 
+## Planning
+
+This protocol is multi-step and stateful. When it is loaded, your **next assistant message must include a plan** before any tool call.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Edit an existing application",
+  "current_state": {
+    "page": "/applications?edit=…",
+    "application_id": "…"
+  },
+  "steps": [
+    {"id": "UNDERSTAND", "status": "doing"},
+    {"id": "REVIEW", "status": "todo"},
+    {"id": "MODIFY", "status": "todo"},
+    {"id": "VALIDATE", "status": "todo"},
+    {"id": "SAVE", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "Confirm intended change scope (metadata vs layout vs components vs data sources vs actions)",
+    "Confirm before saving if changes impact workflows/write actions"
+  ],
+  "verification": [
+    "After SAVE, tool result shows success and the application reflects the changes"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes).
+
+---
+
 ## State: UNDERSTAND
 
 ### Indicators
@@ -34,10 +73,9 @@ UNDERSTAND → REVIEW → MODIFY → VALIDATE → SAVE → COMPLETE
 
 ### Context Check
 ```
-layer_type: "modal"
-modal_id: "edit-application-modal"
-application_id: The ID of the application being edited
-form_data: { name: "...", description: "...", manifestJson: "...", jsonError: null }
+page.full_path: Should be "/applications?edit=..."
+data.applicationEditState: Current edit modal state (name/description/manifestJson/etc.)
+elements: Should include save button and any form controls
 ```
 
 ### Goal
@@ -75,10 +113,10 @@ Clarify exactly what the user wants to modify.
 
 ### Context Check
 ```
-form_data.manifestJson: Current manifest JSON
-form_data.name: Current name
-form_data.description: Current description
-form_data.jsonError: Any existing syntax errors
+data.applicationEditState.manifestJson: Current manifest JSON
+data.applicationEditState.name: Current name (if present)
+data.applicationEditState.description: Current description (if present)
+data.applicationEditState.jsonError: Any existing syntax errors (if present)
 ```
 
 ### Goal
@@ -87,7 +125,7 @@ Understand the current application structure before making changes.
 ### Actions
 
 **1. Parse the current manifest:**
-- Examine `form_data.manifestJson`
+- Examine `data.applicationEditState.manifestJson`
 - Identify layout structure, elements, data sources, actions
 
 **2. Map the structure:**
@@ -139,9 +177,24 @@ TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", 
 2. Determine the line range containing that section
 3. Apply targeted patch:
 
+**CRITICAL: JSON Patching Format**
+
+When patching JSON content, format the tool call as a single valid JSON object with:
+- Newlines as `\n` inside text values
+- Quotes escaped as `\"` inside text values
+- Indentation preserved exactly
+
+**Correct format example:**
+
 ```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 23, "end_line": 35, "expected_text": "... current JSON at those lines ...", "replacement_text": "... updated JSON ..."}}
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 23, "end_line": 35, "expected_text": "    \"data_sources\": {\n      \"main_data\": {\n        \"type\": \"mcp_tool\",\n        \"tool_name\": \"old_tool\"\n      }\n    }", "replacement_text": "    \"data_sources\": {\n      \"main_data\": {\n        \"type\": \"mcp_tool\",\n        \"tool_name\": \"new_tool\"\n      }\n    }"}}
 ```
+
+**Key rules:**
+- Keep the entire tool call as a single valid JSON object
+- Use `\n` for newlines, `\"` for quotes inside text values
+- Match indentation exactly (spaces, not tabs)
+- Verify brace balance in both `expected_text` and `replacement_text`
 
 **When to use patching:**
 - Adding a single component
@@ -170,6 +223,55 @@ TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", 
 | Add action | Patch `actions` section |
 | Restructure layout | Consider full replacement |
 
+---
+
+## CRITICAL: Data Source Transformation Paths
+
+**When fixing data source errors, understand how transformation paths work:**
+
+### Direct MCP Tool Calls vs Data Source Transformations
+
+When you test an MCP tool directly, you see:
+```json
+{ "result": { "raw_response": { "structuredContent": {...} } } }
+```
+
+But application data sources receive UNWRAPPED data:
+```json
+{ "count": 10, "events": [...] }  // Just the content!
+```
+
+### Fixing Transformation Errors
+
+If you see errors like:
+```
+"Key 'result' not found. Available keys: ['count', 'events']"
+```
+
+**WRONG fix:** `result.raw_response.structuredContent.events`
+**CORRECT fix:** `events`
+
+### Working Examples
+
+```json
+// SQL result - get first row's field
+"path": "[0].total"
+
+// Direct field access
+"path": "events"
+
+// No transformation needed
+"transformations": []
+```
+
+### Key Rules
+
+1. **Never prefix with `result.raw_response.*`** - the app unwraps this
+2. **Read the "Available keys" in errors** - they show actual structure
+3. **SQL results are arrays** - use `[0].field` for first row
+
+---
+
 ### Transitions
 - Modification applied → **VALIDATE**
 - Need more info about MCP tools → Query tools, return to **MODIFY**
@@ -186,8 +288,8 @@ TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", 
 
 ### Context Check
 ```
-form_data.manifestJson: Updated manifest
-form_data.jsonError: Should be null after valid edit
+data.applicationEditState.manifestJson: Updated manifest
+data.applicationEditState.jsonError: Should be null/empty after valid edit (if present)
 ```
 
 ### Goal
@@ -226,8 +328,8 @@ Verify the modifications maintain application validity.
 
 ### Context Check
 ```
-elements: Should include save button
-form_data.jsonError: Must be null
+elements: Must include save button (exact ID varies)
+data.applicationEditState.jsonError: Must be null/empty (if present)
 ```
 
 ### Goal
@@ -241,7 +343,7 @@ Save the modified application and verify success.
 **2. Click the save button:**
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-application-save-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "save-application-btn"}}
 ```
 
 **3. Verify result:**
@@ -288,42 +390,23 @@ Check the tool result:
 ```
 
 **2. Offer logical next action:**
-- View changes → Click `open-application-{id}`
+- View changes → Open the application from the list (use the exact element ID from `elements`)
 - Continue editing → Return to **UNDERSTAND**
 - Done → User can proceed
 
 ---
 
-## Reference: Patching Examples
+---
 
-### Add a New Metric Card
+## Element IDs Reference
 
-**Step 1: Patch ui_elements to add the component**
-```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 45, "end_line": 45, "expected_text": "    \"existing_metric\": { ... }", "replacement_text": "    \"existing_metric\": { ... },\n    \"new_metric\": {\n      \"component\": \"MetricCard\",\n      \"props\": {\n        \"title\": \"New Metric\",\n        \"data_source_id\": \"new_ds\"\n      }\n    }"}}
-```
-
-**Step 2: Patch layout to reference the new element**
-```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 12, "end_line": 15, "expected_text": "    \"children\": [\n      { \"element_id\": \"existing\" }\n    ]", "replacement_text": "    \"children\": [\n      { \"element_id\": \"existing\" },\n      { \"element_id\": \"new_metric\" }\n    ]"}}
-```
-
-**Step 3: Add data source if needed**
-```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 78, "end_line": 78, "expected_text": "    \"existing_ds\": { ... }", "replacement_text": "    \"existing_ds\": { ... },\n    \"new_ds\": {\n      \"type\": \"mcp_tool\",\n      \"tool_name\": \"mcp_server_tool\",\n      \"transformations\": []\n    }"}}
-```
-
-### Fix a Transformation Path
-
-```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 89, "end_line": 91, "expected_text": "      { \"operation\": \"get_item\", \"path\": \"wrong.path\" }", "replacement_text": "      { \"operation\": \"get_item\", \"path\": \"correct.path\" }"}}
-```
-
-### Update Component Props
-
-```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationEditState.manifestJson", "start_line": 34, "end_line": 38, "expected_text": "    \"chart\": {\n      \"component\": \"ChartCard\",\n      \"props\": { \"title\": \"Old Title\" }\n    }", "replacement_text": "    \"chart\": {\n      \"component\": \"ChartCard\",\n      \"props\": { \"title\": \"New Title\", \"type\": \"bar\" }\n    }"}}
-```
+| Element | ID | Purpose |
+|---------|-----|---------|
+| Name input | `application-name` | Application name field |
+| Description input | `application-description` | Description field |
+| Manifest editor | `application-manifest` | JSON manifest editor |
+| Cancel button | `cancel-edit-application-btn` | Close without saving |
+| Save button | `save-application-btn` | Save changes |
 
 ---
 
@@ -342,3 +425,5 @@ TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", 
 6. **Not verifying save succeeded**: Always check the tool result before confirming to user.
 
 7. **Editing wrong store path**: Use `applicationEditState.manifestJson` for edit modal, not `currentManifestJson`.
+
+8. **Malformed JSON in patch tool calls**: When patching JSON content, ensure the tool call itself is valid JSON. Use `\n` for newlines and `\"` for quotes inside `expected_text` and `replacement_text` strings.

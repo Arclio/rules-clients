@@ -15,12 +15,26 @@ alwaysApply: false
 
 ---
 
-## Important Distinction
+## ⚠️ Critical: Element ID Rules
 
-| Editing... | What Changes | Who Can Do It | Affects |
-|------------|--------------|---------------|---------|
-| **Server Template** (this protocol) | How the server runs, what variables it needs | super_admin only | All future configurations |
-| **Configuration** (HOW_TO_CONFIGURE protocol) | User's credentials and settings | Any authorized user | Only that user's config |
+**NEVER guess or construct element IDs.** Always:
+
+1. Look in the `elements` array from context for the exact `id` value
+2. Use that `id` value exactly as provided (e.g., `update-server-btn`, NOT `update-server-settings-btn`)
+3. If an element is not in `elements`, it cannot be clicked
+
+Common element IDs for this flow (always verify in context):
+- Settings tab: `mcp-modal-tab-settings`
+- Update button: `update-server-btn`
+- Delete button: `delete-server-btn`
+- Close modal: `close-mcp-server-modal-btn`
+
+---
+
+## Scope (Template vs Configuration)
+
+- This SOP edits the **server template** (how the server runs, required variables, and how the config form appears). This is **super_admin only**.
+- If the user wants to change **credentials / settings for their own account**, use the Configure SOP instead.
 
 ---
 
@@ -31,6 +45,45 @@ ACCESS_SETTINGS → REVIEW_CURRENT → MODIFY_SETTINGS → SAVE_CHANGES → VERI
         ↑                                  │
         └──────────────────────────────────┘ (if save fails)
 ```
+
+---
+
+## Planning
+
+This protocol is multi-step and high-impact. When it is loaded, your **next assistant message must include a plan** before any action.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Edit an MCP server template (super_admin)",
+  "current_state": {
+    "page": "/features?action=configure&server_id=…&tab=settings",
+    "server": "…"
+  },
+  "steps": [
+    {"id": "ACCESS_SETTINGS", "status": "doing"},
+    {"id": "REVIEW_CURRENT", "status": "todo"},
+    {"id": "MODIFY_SETTINGS", "status": "todo"},
+    {"id": "SAVE_CHANGES", "status": "todo"},
+    {"id": "VERIFY_IMPACT", "status": "todo"}
+  ],
+  "decision_points": [
+    "Confirm scope: template vs user configuration",
+    "Confirm before high-impact changes (template JSON/schema/OAuth)"
+  ],
+  "verification": [
+    "After save, the template fields reflect the new values (or UI shows success state)",
+    "If changes impact existing configs, user understands required follow-up"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes).
 
 ---
 
@@ -59,15 +112,21 @@ Check context for user role indicators. If not visible, attempt navigation and o
 
 **2. Open configure modal (if not already open):**
 
+Look in `elements` for a button like `configure-server-{server_id}`.
+
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "configure-server-[SERVER_ID]"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "configure-server-{server_id}"}}
 ```
 
 **3. Navigate to Settings tab:**
 
+Look in `elements` for the settings tab button: `mcp-modal-tab-settings`.
+
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "settings-tab"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "mcp-modal-tab-settings"}}
 ```
+
+> **CRITICAL:** Always use the EXACT `id` from `elements` array. Never guess or construct element IDs.
 
 **4. Verify access:**
 - If successful: `data.activeTab` should be "settings"
@@ -249,11 +308,19 @@ Save template changes and verify success.
 
 ### Actions
 
-**1. Click update:**
+**1. Find the update button ID from context:**
+
+Look in `elements` array for the button with `semantic_role: "primary_action"` or `label: "Update Server"`. The element ID will be something like `update-server-btn`.
+
+> **CRITICAL:** Use the EXACT `id` value from `elements`. Do NOT construct or guess IDs.
+
+**2. Click update:**
 
 ```
 TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "update-server-btn"}}
 ```
+
+Note: Always verify the ID from current context - IDs may vary.
 
 **2. Verify tool result:**
 - `success: true` → Changes saved
@@ -358,6 +425,8 @@ Would you like me to help delete these configurations first?
 ```
 
 **3. Execute deletion:**
+
+Look in `elements` for the delete button: `delete-server-btn`.
 
 ```
 TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "delete-server-btn"}}

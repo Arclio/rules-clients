@@ -18,12 +18,46 @@ alwaysApply: false
 ## State Machine Overview
 
 ```
-EXPLAIN → CONFIGURE → EXECUTE → [WAIT] → COMPLETE
+EXPLAIN → CONFIGURE → EXECUTE
     ↑         │
     └─────────┘ (if parameters need adjustment)
 ```
 
-Note: The WAIT state is automatic—agent cannot take action while workflow executes.
+---
+
+## Planning
+
+This protocol is multi-step and stateful. When it is loaded, your **next assistant message must include a plan** before any tool call.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Execute a workflow run",
+  "current_state": {
+    "page": "/workflow-execute/…?state=configuring",
+    "workflow_id": "…"
+  },
+  "steps": [
+    {"id": "EXPLAIN", "status": "doing"},
+    {"id": "CONFIGURE", "status": "todo"},
+    {"id": "EXECUTE", "status": "todo"}
+  ],
+  "decision_points": [
+    "Collect required parameter values from the user",
+    "Confirm before starting execution if the run is impactful"
+  ],
+  "verification": [
+    "After EXECUTE, the UI reports the run started successfully (or shows a clear error)"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes).
 
 ---
 
@@ -155,7 +189,7 @@ Check `current_values` in next context to confirm values were applied.
 
 ### Context Check
 ```
-elements: Should include execute button
+elements: Must include execute button (exact ID varies)
 current_values: All required parameters should have values
 validation_error: Should be null/empty
 ```
@@ -185,7 +219,7 @@ Shall I start the execution?
 **3. Trigger execution:**
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "execute-workflow-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "[EXECUTE_WORKFLOW_BUTTON_ID]"}}
 ```
 
 **4. Inform user what happens next:**
@@ -197,39 +231,8 @@ The page will show execution progress. I cannot take actions while the workflow 
 ```
 
 ### Transitions
-- Execution started → **WAIT** (automatic, no agent action)
+- Execution started → End of this protocol. The page will transition to `state=executing` (no SOP is loaded while running). When it reaches `state=complete`, `HOW_TO_DEBUG_WORKFLOW` will load automatically.
 - Execution failed to start → Check error, return to **CONFIGURE**
-
----
-
-## State: WAIT (Informational Only)
-
-### Indicators
-- Page state is `?state=executing`
-- Workflow is actively running
-- Agent cannot take action
-
-### Context Check
-```
-page.full_path: Should contain "state=executing"
-execution_status: "running"
-```
-
-### Goal
-No action possible—this is an informational state.
-
-### Actions
-
-**NONE** - The agent cannot and should not attempt any actions while executing.
-
-**If user asks about status:**
-- Explain the workflow is currently running
-- Results will be available when complete
-- Offer to help interpret results when done
-
-### Transitions
-- Execution completes → **COMPLETE** (triggers `HOW_TO_DEBUG_WORKFLOW` protocol)
-- User navigates away → Protocol ends
 
 ---
 

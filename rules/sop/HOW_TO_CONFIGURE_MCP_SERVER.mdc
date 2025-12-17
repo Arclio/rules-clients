@@ -1,5 +1,3 @@
-
-```markdown
 ---
 description: "Operational Protocol: Configuring an MCP Server with credentials. State-based guidance for helping users add their credentials to an existing server template."
 globs: []
@@ -16,13 +14,74 @@ alwaysApply: false
 
 ---
 
+## ⚠️ Critical: Element ID Rules
+
+**NEVER guess or construct element IDs.** Always:
+
+1. Look in the `elements` array from context for the exact `id` value
+2. Use that `id` value exactly as provided
+3. If an element is not in `elements`, it cannot be clicked
+
+Common element IDs for this flow (always verify in context):
+- Configure modal button: `configure-server-{server_id}`
+- Tab navigation: `mcp-modal-tab-configs`, `mcp-modal-tab-configure`, `mcp-modal-tab-settings`
+- Create config: `create-new-config-btn`
+- Save config: `save-config-btn`
+- Toggle server: `toggle-server-{server_id}`
+- Close modal: `close-mcp-server-modal-btn`
+
+---
+
 ## State Machine Overview
 
 ```
-CONFIG_LIST → CREATE_OR_EDIT → FORM_FILL → [OAUTH_FLOW] → SAVE_CONFIG → ACTIVATION → ENABLE_SERVER
-                   ↑                              │
-                   └──────────────────────────────┘ (if save fails)
+CONFIG_LIST → CREATE_OR_EDIT → FORM_FILL → [OAUTH_FLOW] → SAVE_CONFIG → ACTIVATION → ENABLE_SERVER → COMPLETE
+                                ↑                         │
+                                └─────────────────────────┘ (if save fails)
 ```
+
+---
+
+## Planning
+
+This protocol is multi-step and stateful. When it is loaded, your **next assistant message must include a plan** before any action.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Configure and enable an MCP server for the user",
+  "current_state": {
+    "page": "/features?action=configure&server_id=…",
+    "server": "…"
+  },
+  "steps": [
+    {"id": "CONFIG_LIST", "status": "doing"},
+    {"id": "CREATE_OR_EDIT", "status": "todo"},
+    {"id": "FORM_FILL", "status": "todo"},
+    {"id": "OAUTH_FLOW", "status": "todo"},
+    {"id": "SAVE_CONFIG", "status": "todo"},
+    {"id": "ACTIVATION", "status": "todo"},
+    {"id": "ENABLE_SERVER", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "Create a new configuration vs edit an existing one",
+    "If OAuth, user must confirm they are ready to connect"
+  ],
+  "verification": [
+    "Config saved (or OAuth completed) and appears in data.configurations",
+    "Desired config is active",
+    "Server is enabled on the main Connections list"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes).
 
 ---
 
@@ -47,12 +106,13 @@ Understand what configurations exist and decide whether to create new or edit ex
 
 **1. If modal not open, open it:**
 
-Check `page.full_path` for configure action. If not present:
+Check `page.full_path` for the configure action. If not present, open the modal by looking in `elements` for `configure-server-{server_id}`:
+
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "configure-server-[SERVER_ID]"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "configure-server-{server_id}"}}
 ```
 
-Note: Get the server ID from `data.servers` array in context.
+> **CRITICAL:** Use the EXACT `id` from `elements` array. Replace `{server_id}` with the actual ID from `data.servers`.
 
 **2. Review existing configurations:**
 
@@ -91,7 +151,7 @@ Would you like to:
 
 ### Context Check
 ```
-elements: Should include "create-new-config-btn" (for new) or "edit-config-[ID]" (for edit)
+elements: Must include the create/edit configuration buttons (exact IDs vary)
 data.activeTab: Currently "configs", will change to "configure"
 ```
 
@@ -101,14 +161,22 @@ Navigate to the configuration form with appropriate mode (empty for new, populat
 ### Actions
 
 **For new configuration:**
+
+Look in `elements` for `create-new-config-btn`:
+
 ```
 TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "create-new-config-btn"}}
 ```
 
 **For editing existing:**
+
+Look in `elements` for `edit-config-{config_id}`:
+
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-config-[CONFIG_ID]"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-config-{config_id}"}}
 ```
+
+> **CRITICAL:** Always use the EXACT `id` from `elements`. Never construct or guess IDs.
 
 **Verify transition:**
 - `data.activeTab` should change to "configure"
@@ -239,6 +307,8 @@ Ready to connect?
 
 **3. Initiate OAuth:**
 
+Look in `elements` for `connect-oauth-btn`:
+
 ```
 TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "connect-oauth-btn"}}
 ```
@@ -283,9 +353,13 @@ Save the configuration and verify success.
 
 **1. Click save:**
 
+Look in `elements` for `save-config-btn`:
+
 ```
 TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "save-config-btn"}}
 ```
+
+> **CRITICAL:** Use the EXACT `id` from `elements` array.
 
 **2. Verify tool result:**
 - `success: true` → Configuration saved
@@ -334,8 +408,10 @@ If the configuration is already active, skip to ENABLE_SERVER.
 
 **2. Activate the configuration:**
 
+Look in `elements` for `activate-config-{config_id}`:
+
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "activate-config-[CONFIG_ID]"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "activate-config-{config_id}"}}
 ```
 
 **3. Verify activation:**
@@ -375,16 +451,21 @@ Enable the server so its tools become available.
 
 **1. Close modal if still open:**
 
-If still in configure modal:
+If still in configure modal, look in `elements` for `close-mcp-server-modal-btn`:
+
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "close-modal-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "close-mcp-server-modal-btn"}}
 ```
 
 **2. Find and toggle the server:**
 
+Look in `elements` for `toggle-server-{server_id}`:
+
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "toggle-server-[SERVER_ID]"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "toggle-server-{server_id}"}}
 ```
+
+> **CRITICAL:** Always use EXACT `id` values from `elements`. Never guess or construct IDs.
 
 **3. Verify server is enabled:**
 - Server should show "Active" or "Enabled" status
@@ -409,6 +490,24 @@ Would you like to see what tools are available?
 ### Transitions
 - Server enabled → **COMPLETE**
 - Enable failed → Check if configuration is active, may need earlier steps
+
+---
+
+## State: COMPLETE
+
+### Indicators
+- The server is enabled (or the user explicitly chose not to enable yet)
+- The user has what they need to proceed (use tools in a workflow, test tools, etc.)
+
+### Goal
+Close the loop and offer the next logical action.
+
+### Actions
+- Confirm success and summarize:
+  - Server name
+  - Active configuration name (if applicable)
+  - What the user can do next
+- If the user wants to validate tools, suggest viewing tools or testing a tool in a workflow.
 
 ---
 

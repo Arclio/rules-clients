@@ -25,6 +25,45 @@ UNDERSTAND → REVIEW → MODIFY → VALIDATE → SAVE → COMPLETE
 
 ---
 
+## Planning
+
+This protocol is multi-step and stateful. When it is loaded, your **next assistant message must include a plan** before any tool call.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Edit an existing workflow",
+  "current_state": {
+    "page": "/workflow-edit/…",
+    "workflow_id": "…"
+  },
+  "steps": [
+    {"id": "UNDERSTAND", "status": "doing"},
+    {"id": "REVIEW", "status": "todo"},
+    {"id": "MODIFY", "status": "todo"},
+    {"id": "VALIDATE", "status": "todo"},
+    {"id": "SAVE", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "Confirm intended change scope (metadata vs content vs logic)",
+    "If change impacts behavior, confirm before saving"
+  ],
+  "verification": [
+    "After SAVE, tool result shows success and the edited workflow reflects the changes"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes).
+
+---
+
 ## State: UNDERSTAND
 
 ### Indicators
@@ -184,7 +223,7 @@ Verify the modifications maintain workflow validity.
 **2. If adding a new tool, verify it exists:**
 
 ```
-TOOL_CALL: {"name": "get_mcp_tool_schema", "parameters": {"server_name": "server_name", "tool_name": "tool_name"}}
+TOOL_CALL: {"name": "get_mcp_tool_schema", "parameters": {"tool_name": "server_name__tool_name"}}
 ```
 
 **3. If validation fails:**
@@ -207,7 +246,7 @@ TOOL_CALL: {"name": "get_mcp_tool_schema", "parameters": {"server_name": "server
 
 ### Context Check
 ```
-elements: Should include save/update button
+elements: Must include the save/update button for this page (exact ID varies)
 data.workflowEditState: Should show modified values
 ```
 
@@ -219,7 +258,7 @@ Save the modified workflow and verify success.
 **1. Click the save button:**
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "edit-workflow-save-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "[SAVE_WORKFLOW_BUTTON_ID]"}}
 ```
 
 **2. Verify result:**
@@ -268,43 +307,6 @@ Check the tool result:
 - Test changes → Navigate to execution page
 - Continue editing → Return to **UNDERSTAND**
 - Done → User can navigate away
-
----
-
-## Reference: Common Edit Patterns
-
-### Renaming a Workflow
-
-```
-TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowEditState": {"title": "New Workflow Name"}}}}
-```
-
-### Changing Category
-
-```
-TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "workflow", "updates": {"workflowEditState": {"scenario": "reporting"}}}}
-```
-
-### Fixing a Variable Reference
-
-1. Identify the broken reference in content
-2. Update it to point to correct output
-3. Submit updated content
-
-### Adding a Step
-
-1. Read current content
-2. Append new step with proper numbering:
-   ```markdown
-   ## Step N: New Step Title
-
-   **Tool:** mcp_server_tool
-   **Inputs:**
-   - `param`: ${previous.output}
-   **Outputs:**
-   - `result` (type): $.path
-   ```
-3. Submit complete updated content
 
 ---
 

@@ -14,12 +14,75 @@ alwaysApply: false
 
 ---
 
+## ⚠️ Critical: Element ID Rules
+
+**NEVER guess or construct element IDs.** Always:
+
+1. Look in the `elements` array from context for the exact `id` value
+2. Use that `id` value exactly as provided
+3. If an element is not in `elements`, it cannot be clicked
+
+Common element IDs for this flow (always verify in context):
+- Tab navigation: `mcp-modal-tab-add`, `mcp-modal-tab-variables`
+- Detect variables: `detect-variables-btn`
+- Submit server: `submit-server-btn`
+
+---
+
 ## State Machine Overview
 
 ```
-DISCOVERY → SELECTION → DOCUMENTATION → FORM_FILL → VARIABLES → SAVE → COMPLETE
-    ↑           │              │
-    └───────────┴──────────────┘ (can return if issues found)
+DISCOVERY → SELECTION → DOCS → FORM_FILL → DETECT_VARIABLES → SAVE → COMPLETE
+    ↑           │        │        │
+    └───────────┴────────┴────────┘ (backtrack if missing info or user changes choice)
+```
+
+---
+
+## Planning
+
+When this SOP is loaded, your **next assistant message must include a plan** before any action.
+
+### Plan format (JSON artifact)
+
+Output your plan as a **single JSON object** in a `json` code block so it can be rendered and tracked by the UI. Keep it compact.
+
+Required keys:
+- `goal`
+- `current_state` (use `page.full_path`, plus whether the template already exists in `data.servers`)
+- `steps` (use the state names below, in order; each has a `status`)
+- `decision_points` (where you must ask the user / wait)
+- `verification` (what you’ll confirm after key steps)
+
+Allowed status values: `todo` | `doing` | `done` | `blocked`
+
+After each completed state, update the same JSON (mark statuses and add brief notes). Do not create multiple competing plans.
+
+Example:
+
+```json
+{
+  "goal": "Add MCP server template for Notion",
+  "current_state": {
+    "page": "/features?action=add-server",
+    "template_exists": false
+  },
+  "steps": [
+    {"id": "DISCOVERY", "status": "doing"},
+    {"id": "SELECTION", "status": "todo"},
+    {"id": "DOCS", "status": "todo"},
+    {"id": "FORM_FILL", "status": "todo"},
+    {"id": "DETECT_VARIABLES", "status": "todo"},
+    {"id": "SAVE", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "User must explicitly select an implementation in SELECTION"
+  ],
+  "verification": [
+    "After SAVE, the new template appears in data.servers (or the UI shows a success state)"
+  ]
+}
 ```
 
 ---
@@ -27,79 +90,52 @@ DISCOVERY → SELECTION → DOCUMENTATION → FORM_FILL → VARIABLES → SAVE �
 ## State: DISCOVERY
 
 ### Indicators
-- User has mentioned a service name they want to connect
-- No server template exists for this service yet (or user wants alternatives)
-- You don't yet know what MCP server implementations are available
+- On the add-server flow (`page.full_path`)
+- No implementation selected yet
+- Target service is known or needs clarification
 
 ### Context Check
-- Verify current page via `page.full_path`
-- Check `data.servers` to see if template already exists
+- `page.full_path`
+- `data.servers` (does a template already exist?)
+- **Connected Integrations** (do you have a web-search MCP tool?)
 
 ### Goal
-Find suitable MCP server implementations for the requested service.
+Produce 1-5 candidate implementations (GitHub repo and/or npm package) OR ask the user for a direct URL/package.
 
 ### Actions
+1. If the target service is unclear, ask: “Which service do you want to connect (e.g., Salesforce, Notion, Azure)?”
+2. If a template for this service already exists in `data.servers`, tell the user and ask whether they want to configure the existing template instead.
+3. **Preferred search tool (deterministic):** If Connected Integrations includes `brave-search__brave_web_search`, use it for discovery. Do NOT “pick a search MCP server” opportunistically if Brave Search is available.
 
-**1. Check for available search tools:**
-
-Before searching, verify you have search capability:
-```
-TOOL_CALL: {"name": "list_mcp_connections", "parameters": {}}
-```
-
-Look for search-capable servers in the response:
-- `brave-search` → Use `brave-search__brave_web_search`
-- `exa` → Use `exa__web_search_exa`
-- Other search tools as available
-
-**2. If search tool available, execute search:**
+Example query (run 1-2 searches):
 
 ```
-TOOL_CALL: {"name": "brave-search__brave_web_search", "parameters": {"query": "\"[SERVICE_NAME] MCP server\" site:github.com OR site:npmjs.com OR site:mcpservers.org"}}
+TOOL_CALL: {"name": "brave-search__brave_web_search", "parameters": {"query": "\"[SERVICE_NAME] MCP server\" site:github.com OR site:mcpservers.org OR site:npmjs.com"}}
 ```
 
-**3. If NO search tool available:**
-
-Do NOT attempt to call search tools that don't exist. Instead, inform the user:
-
-```
-I don't currently have access to a web search tool to find MCP server implementations.
-
-**Options:**
-1. You can connect a search integration (like Brave Search or Exa) in Settings > Integrations
-2. You can provide me with a GitHub repository URL or npm package name for the MCP server you want to add
-3. If you have documentation for the server, you can share the relevant details
-
-Which would you prefer?
-```
+4. **Fallback:** If Brave Search is NOT available, but `exa__web_search_exa` is available, use Exa.
+   - If unsure of its parameters, call `get_mcp_tool_schema` once, then search with the same query intent.
+5. If no web-search MCP tool is available:
+   - Ask the user to provide a GitHub repo URL or npm package name for the MCP server implementation.
 
 ### Transitions
-- Search results found → **SELECTION**
-- No search tool available → Wait for user input, then **DOCUMENTATION** (if they provide URL) or remain in **DISCOVERY**
-- User provides direct link → **DOCUMENTATION**
+- Have ≥1 candidate → **SELECTION**
+- User provides a specific repo/package → **DOCS**
+- Waiting on user info → stay in **DISCOVERY**
 
 ---
 
 ## State: SELECTION
 
 ### Indicators
-- Search results are available
-- Multiple MCP server options exist
-- User has not yet chosen which one to use
+- Candidate implementations are available
+- User has not selected which implementation to use
 
 ### Goal
-Present options clearly and help user make informed choice.
+Present options and wait for explicit user selection.
 
 ### Actions
-
-**1. Extract key information from search results:**
-- Repository/package name
-- Popularity indicators (stars, downloads)
-- Last updated date
-- Installation method (uvx, npx, docker)
-- Authentication type
-
-**2. Present as comparison table:**
+1. Present the candidates as a short table and include (optional) recommendation.
 
 ```markdown
 🔍 **Found [N] MCP servers for [Service]:**
@@ -114,236 +150,149 @@ Present options clearly and help user make informed choice.
 Which would you like to install? (Reply with the number or name)
 ```
 
-**3. Wait for user selection** - Do NOT proceed without explicit choice.
+2. **STOP and wait**. Do not proceed without an explicit user selection.
 
 ### Transitions
-- User selects option → **DOCUMENTATION**
-- User wants different search → **DISCOVERY**
-- User provides their own URL → **DOCUMENTATION**
+- User selects an option → **DOCS**
+- User wants a different search / different options → **DISCOVERY**
+- User provides their own URL/package → **DOCS**
 
 ---
 
-## State: DOCUMENTATION
+## State: DOCS
 
 ### Indicators
-- A specific MCP server has been selected
-- You need installation and configuration details
-- You don't yet have the command, args, and environment variables
+- A specific implementation has been selected
+- You still need the exact install/run command, args, and required variables
 
 ### Goal
-Gather complete configuration information for the selected server.
+Extract the exact information needed to build the server template form fields.
 
 ### Actions
-
-**1. Fetch documentation:**
-
-If you have a search tool, search for the README:
-```
-TOOL_CALL: {"name": "brave-search__brave_web_search", "parameters": {"query": "[OWNER]/[REPO] README installation environment variables configuration"}}
-```
-
-Alternative queries if first doesn't yield results:
-- `"[package-name]" npm installation configuration`
-- `"[OWNER]/[REPO]" github mcp server setup`
-
-**2. Extract required information:**
-
-From the documentation, identify:
-- **Command**: `npx`, `uvx`, or `docker`
-- **Args**: Package name and any required arguments
-- **Environment variables**: What credentials/config the server needs
-- **Which variables are secrets** (API keys, tokens, passwords)
-
-**3. If documentation is insufficient:**
-
-```
-I found the repository but couldn't extract complete configuration details.
-
-**What I found:**
-- Package: [name]
-- Install method: [npx/uvx/docker]
-
-**What I'm missing:**
-- [List missing items]
-
-Could you check the README at [URL] and let me know:
-1. What environment variables are required?
-2. Which ones are secrets (API keys, tokens)?
-```
+1. Gather the implementation docs (README, install instructions, required env vars). Use a web-search MCP tool if available.
+2. Extract this checklist:
+   - Command + args (how the server is run)
+   - Required variables (names + descriptions)
+   - Which variables are secrets
+   - OAuth: whether `oauth_enabled` should be true/false for this template
+3. If any of the above is ambiguous, ask the user to confirm by pointing to the exact README section or pasting the relevant snippet.
 
 ### Transitions
-- All configuration details gathered → **FORM_FILL**
-- Documentation incomplete → Wait for user input
-- Wrong server chosen → **SELECTION** or **DISCOVERY**
+- All required details gathered → **FORM_FILL**
+- Missing/ambiguous details → wait for user input (stay in **DOCS**)
+- User changes choice → **SELECTION** (or **DISCOVERY**)
 
 ---
 
 ## State: FORM_FILL
 
 ### Indicators
-- You have all configuration information
-- Need to populate the add server form
-- Current route should be `/features?action=add-server` (or you need to navigate there)
+- You have the selected implementation’s run command/args and required variables
+- The add-server form is present (`data.addServerForm`)
 
 ### Context Check
-```
-page.full_path: Should be "/features?action=add-server"
-data.addServerForm: Shows current form state
-elements: Should include form-related elements
-```
+- `page.full_path` is `/features?action=add-server`
+- `data.addServerForm` (current values + any validation errors)
+- `actions` (may include store/update shape hints)
+- `elements` (exact IDs for “Detect Variables” and “Save/Submit”)
 
 ### Goal
-Populate ALL required form fields in a single `ui_fill_state` call.
+Fill the add-server form (one `ui_fill_state` call).
 
 ### Actions
+1. Build the complete `addServerForm` update (all required fields at once):
+   - `name` (snake_case internal identifier)
+   - `display_name` (user-facing name)
+   - `description`
+   - `oauth_enabled` (true/false)
+   - `config_template_json` (JSON string)
+   - `variable_schema_json` (JSON string)
+   - `ui_schema_json` (JSON string; MUST NOT be empty)
+2. Create the JSON strings:
+   - `config_template_json` MUST use placeholders like `{{api_key}}` inside `env`
+   - Every placeholder MUST appear in:
+     - `variable_schema_json.properties`
+     - `ui_schema_json.sections[].field`
+   - Mark secrets (API keys/tokens/passwords) with `"secret": true`
+3. Execute the form fill:
 
-**1. Navigate to add server form (if not already there):**
+```
+TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "mcp", "updates": {"addServerForm": {"name": "...", "display_name": "...", "description": "...", "config_template_json": "...", "variable_schema_json": "...", "ui_schema_json": "...", "oauth_enabled": false}}}}
+```
 
-Check `page.full_path`. If not on `/features?action=add-server`:
-- If on `/features`, look for add button in `elements` and click it
-- If elsewhere, navigate to `/features` first
+4. Verify in the next context that `data.addServerForm` reflects your inputs (or shows validation errors).
 
-**2. Prepare complete form data:**
+### Minimal JSON skeletons (edit to match the selected server)
 
-All fields must be provided together:
-
-| Field | Description | Format |
-|-------|-------------|--------|
-| `name` | Internal identifier | `lowercase_snake_case` (e.g., `salesforce_mcp`) |
-| `display_name` | User-friendly name | Title case (e.g., `Salesforce`) |
-| `description` | What the server does | Brief description |
-| `config_template_json` | MCP server configuration | Escaped JSON string |
-| `variable_schema_json` | Variable definitions | Escaped JSON string |
-| `ui_schema_json` | Form field definitions | Escaped JSON string (NEVER empty `"{}"`) |
-| `oauth_enabled` | OAuth flag | `false` for API key auth |
-
-**3. Build the configuration JSON structures:**
-
-**config_template_json example:**
+**config_template_json:**
 ```json
 {
   "mcpServers": {
     "server_key": {
       "command": "npx",
-      "args": ["-y", "@package/name"],
+      "args": ["-y", "@scope/package"],
       "env": {
-        "API_KEY": "{{api_key}}",
-        "BASE_URL": "{{base_url}}"
+        "API_KEY": "{{api_key}}"
       }
     }
   }
 }
 ```
 
-**variable_schema_json example:**
+**variable_schema_json:**
 ```json
 {
   "required": ["api_key"],
   "properties": {
-    "api_key": {
-      "type": "string",
-      "title": "API Key",
-      "description": "Your service API key",
-      "secret": true
-    },
-    "base_url": {
-      "type": "string",
-      "title": "Base URL",
-      "description": "API endpoint URL",
-      "secret": false,
-      "default": "https://api.example.com"
-    }
+    "api_key": { "type": "string", "title": "API Key", "secret": true }
   }
 }
 ```
 
-**ui_schema_json example:**
+**ui_schema_json:**
 ```json
 {
   "sections": [
-    {
-      "title": "API Key",
-      "type": "password",
-      "field": "api_key",
-      "required": true,
-      "helpText": "Find this in your account settings"
-    },
-    {
-      "title": "Base URL",
-      "type": "text",
-      "field": "base_url",
-      "placeholder": "https://api.example.com"
-    }
+    { "title": "API Key", "type": "password", "field": "api_key", "required": true }
   ]
 }
 ```
 
-**4. Execute form fill:**
-
-```
-TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "mcp", "updates": {"addServerForm": {"name": "...", "display_name": "...", "description": "...", "config_template_json": "...", "variable_schema_json": "...", "ui_schema_json": "...", "oauth_enabled": false}}}}
-```
-
-**5. Verify in next context:**
-- Check `data.addServerForm` shows populated values
-- All fields should match what you submitted
-
-### Critical Rules
-
-**Placeholder format:** Use `{{snake_case}}` (double curly braces)
-
-**Secret classification:**
-- `true`: API keys, tokens, passwords, OAuth secrets, private keys
-- `false`: URLs, paths, usernames, feature flags, ports, regions
-
-**Field consistency:** Every `{{placeholder}}` in config_template must have:
-- A matching property in `variable_schema_json`
-- A matching section in `ui_schema_json`
-
-**ui_schema_json must NOT be empty:** Always define sections for each variable, or users won't see form fields.
-
 ### Transitions
-- Form verified populated → **VARIABLES**
-- Form fill failed → Check error, fix data, retry once
-- Repeated failure → Return to user with status
+- Form filled (no blocking validation errors) → **DETECT_VARIABLES**
+- Form fill failed / validation errors → fix once and retry; if unclear, ask the user
 
 ---
 
-## State: VARIABLES
+## State: DETECT_VARIABLES
 
 ### Indicators
-- Form is populated with all fields
-- Variables have not yet been detected
-- The "Detect Variables" button should be available
+- Form is filled
+- A “Detect Variables” affordance exists in `elements` (exact ID varies)
 
 ### Context Check
-```
-elements: Should include "detect-variables-btn" or similar
-data.addServerForm: Should show populated config_template_json
-```
+- `elements` (find a button that clearly corresponds to detecting/parsing variables)
+- `data.addServerForm.config_template_json`
 
 ### Goal
-Trigger variable detection from the config template.
+Let the UI parse placeholders from the template (if supported).
 
 ### Actions
+1. If a detect-variables button exists in `elements`, click it using the exact `id` from context.
 
-**1. Verify element exists:**
-
-Check `elements` array for the detect variables button. Look for `id` containing "detect" or "variables".
-
-**2. Click detect variables:**
+Look in `elements` for `detect-variables-btn`:
 
 ```
 TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "detect-variables-btn"}}
 ```
 
-**3. Verify in next context:**
-- Variables should now be parsed from `{{placeholder}}` patterns
-- The form should show detected variables or the variables tab should be populated
+> **CRITICAL:** Use the EXACT `id` from `elements`. Never guess or construct IDs.
+
+2. If no detect-variables affordance exists in `elements`, skip this state.
 
 ### Transitions
-- Variables detected successfully → **SAVE**
-- Detection failed → Check config_template_json format, return to **FORM_FILL**
+- Detection succeeded or skipped → **SAVE**
+- Detection failed → return to **FORM_FILL** and fix template/schema mismatch
 
 ---
 
@@ -351,58 +300,33 @@ TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "detect-var
 
 ### Indicators
 - Form is complete
-- Variables are detected
+- Variables are detected (or variable detection is not required on this UI)
 - Ready to create the server template
 
 ### Context Check
-```
-elements: Should include save/submit button
-data.addServerForm: Should be fully populated
-```
+- `elements` (save/submit button id)
+- `data.addServerForm` (confirm values are present)
 
 ### Goal
 Save the server template and verify success.
 
 ### Actions
+1. Click the submit/save button using the exact `id` from `elements`.
 
-**1. Verify element exists:**
-
-Check `elements` array for submit button. Look for `id` containing "submit", "save", or "add-server".
-
-**2. Click save:**
+Look in `elements` for `submit-server-btn`:
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "add-server-submit-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "submit-server-btn"}}
 ```
 
-**3. Verify result:**
-
-Check the tool result:
-- `success: true` → Proceed to verify context change
-- `success: false` → Read error message completely
-
-**4. Verify context change:**
-
-After successful save, context should show:
-- Navigation away from add form, OR
-- New server appears in `data.servers` list, OR
-- Modal closed
-
-### Error Handling
-
-**Common errors and fixes:**
-
-| Error | Cause | Fix |
-|-------|-------|-----|
-| "Invalid JSON" | Malformed config_template or variable_schema | Check JSON escaping, validate structure |
-| "Duplicate name" | Server with this name exists | Change `name` field to unique value |
-| "Missing required field" | Form field empty | Return to FORM_FILL, add missing field |
-| "Invalid variable schema" | Mismatch between template and schema | Ensure all placeholders have schema entries |
+> **CRITICAL:** Use the EXACT `id` from `elements`. Never guess or construct IDs.
+2. Verify result + context:
+   - Success: the new server template appears in `data.servers` OR the UI exits the add-server flow with a success state
+   - Failure: read the full error and return to **FORM_FILL** (name collision, invalid JSON, schema mismatch, missing required fields)
 
 ### Transitions
 - Save successful (verified) → **COMPLETE**
-- Save failed with fixable error → Return to **FORM_FILL**
-- Save failed with unclear error → Return to user with status
+- Save failed → **FORM_FILL**
 
 ---
 
@@ -413,80 +337,13 @@ After successful save, context should show:
 - Context shows the new server in the list or on a confirmation view
 
 ### Actions
-
-**1. Confirm success to user:**
-
-```
-✅ **Server template created successfully!**
-
-**Server:** [display_name]
-**Variables configured:** [list of variables]
-
-**Next steps:**
-- To use this server, you'll need to configure it with your credentials
-- Would you like me to help you configure it now?
-```
-
-**2. Offer logical next action:**
-- Configure with credentials → Leads to HOW_TO_CONFIGURE protocol
-- Create another server → Return to DISCOVERY
-- Use in workflow → Navigate to workflow creation
-
----
-
-## Reference: JSON Structure Templates
-
-### Command Types
-
-**npx (Node.js packages):**
-```json
-{
-  "command": "npx",
-  "args": ["-y", "@scope/package-name"],
-  "env": {...}
-}
-```
-
-**uvx (Python packages):**
-```json
-{
-  "command": "uvx",
-  "args": ["--from", "package-name==1.0.0", "entry-point"],
-  "env": {...}
-}
-```
-
-**docker:**
-```json
-{
-  "command": "docker",
-  "args": ["run", "-i", "--rm", "-e", "VAR={{var}}", "image:tag"],
-  "env": {}
-}
-```
-
-### UI Schema Section Types
-
-| Type | Use For | Additional Properties |
-|------|---------|----------------------|
-| `password` | Secrets, API keys | Masked input |
-| `text` | Plain text values | `placeholder` optional |
-| `textarea` | Multi-line text | For longer content |
-| `checkbox` | Multiple selections | Requires `options` array |
-| `instructions` | Help text only | No `field` needed |
+1. Confirm success and offer the next step (configure credentials using the configure-server flow / SOP).
 
 ---
 
 ## Common Pitfalls
 
-1. **Empty ui_schema_json**: Results in no form fields shown to users. Always define sections.
-
-2. **Placeholder mismatch**: `{{api_key}}` in template but `apiKey` in schema. Use consistent snake_case.
-
-3. **Missing secret flag**: API keys without `"secret": true` won't be encrypted.
-
-4. **Wrong command for package type**: npm packages use `npx`, Python packages use `uvx`.
-
-5. **Assuming search tool exists**: Always check `list_mcp_connections` first.
-
-6. **Proceeding without user selection**: In SELECTION state, wait for explicit choice.
+1. **Empty `ui_schema_json`**: Users can’t enter variables. Always define sections for every placeholder.
+2. **Placeholder mismatch** between `config_template_json` and schemas: every `{{var}}` must exist in `variable_schema_json` and `ui_schema_json`.
+3. **Secrets not marked** (`"secret": true`) for API keys/tokens/passwords.
+4. **Proceeding without explicit selection** in **SELECTION**.

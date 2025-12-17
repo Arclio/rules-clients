@@ -24,6 +24,45 @@ UNDERSTAND → DESIGN → FORM_FILL → VALIDATE → SAVE → COMPLETE
 
 ---
 
+## Planning
+
+This protocol is multi-step and stateful. When it is loaded, your **next assistant message must include a plan** before any tool call.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Create a new application (dashboard)",
+  "current_state": {
+    "page": "/applications?create=true",
+    "have_requirements": false
+  },
+  "steps": [
+    {"id": "UNDERSTAND", "status": "doing"},
+    {"id": "DESIGN", "status": "todo"},
+    {"id": "FORM_FILL", "status": "todo"},
+    {"id": "VALIDATE", "status": "todo"},
+    {"id": "SAVE", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "Confirm dashboard requirements before drafting the manifest",
+    "Confirm before saving if the dashboard will trigger workflows / write actions"
+  ],
+  "verification": [
+    "After SAVE, tool result shows success and the application appears in the applications list"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes).
+
+---
+
 ## State: UNDERSTAND
 
 ### Indicators
@@ -32,8 +71,9 @@ UNDERSTAND → DESIGN → FORM_FILL → VALIDATE → SAVE → COMPLETE
 - You don't know what data, components, or actions are needed
 
 ### Context Check
-- Verify modal is open via `layer_type: "modal"`
-- Check `modal_id: "create-application-modal"`
+- `page.full_path` should be `/applications?create=true`
+- `data.applicationCreationState` should be present (create modal form state)
+- `elements` should include the create/submit button and any required fields
 
 ### Goal
 Clarify the user's requirements before designing the application.
@@ -126,10 +166,9 @@ Layout options:
 
 ### Context Check
 ```
-layer_type: "modal"
-modal_id: "create-application-modal"
-form_data: { name: "", description: "", manifestJson: "...", jsonError: null }
-patchable_text_fields: [{ field: "manifestJson", store_id: "applications", path: "applicationCreationState.manifestJson" }]
+page.full_path: "/applications?create=true"
+data.applicationCreationState: Current form state (name/description/manifestJson/etc.)
+data.patchable_text_fields: If present, should include `applicationCreationState.manifestJson`
 ```
 
 ### Goal
@@ -187,8 +226,8 @@ TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", 
 - `manifestJson`: Must be valid JSON conforming to manifest schema
 
 **3. Verify in next context:**
-- Check `form_data` shows populated values
-- Check `jsonError` is null (no syntax errors)
+- Check `data.applicationCreationState` shows the populated values
+- If a JSON error field is present (commonly `data.applicationCreationState.jsonError`), it should be null/empty
 
 ### Transitions
 - Form populated, no errors → **VALIDATE**
@@ -206,8 +245,8 @@ TOOL_CALL: {"name": "ui_fill_state", "parameters": {"store_id": "applications", 
 
 ### Context Check
 ```
-form_data.jsonError: Should be null
-form_data.manifestJson: Should contain valid JSON
+data.applicationCreationState.manifestJson: Should contain valid JSON
+data.applicationCreationState.jsonError: Should be null/empty (if present)
 ```
 
 ### Goal
@@ -227,13 +266,93 @@ Verify the manifest is structurally valid before saving.
 
 **2. If validation fails, use patching:**
 
+**CRITICAL: JSON Patching Format**
+
+When patching JSON content, format the tool call as a single valid JSON object with:
+- Newlines as `\n` inside text values
+- Quotes escaped as `\"` inside text values
+- Indentation preserved exactly
+
+**Correct format example:**
+
 ```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationCreationState.manifestJson", "start_line": 45, "end_line": 52, "expected_text": "... current text ...", "replacement_text": "... fixed text ..."}}
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "applicationCreationState.manifestJson", "start_line": 45, "end_line": 52, "expected_text": "    \"broken_element\": {\n      \"component\": \"OldName\"\n    }", "replacement_text": "    \"fixed_element\": {\n      \"component\": \"DataTable\"\n    }"}}
 ```
+
+**Key rules:**
+- Keep the entire tool call as a single valid JSON object
+- Use `\n` for newlines, `\"` for quotes inside text values
+- Match indentation exactly (spaces, not tabs)
+- Verify brace balance in both `expected_text` and `replacement_text`
 
 **When to use patching vs full replacement:**
 - Patching: Fix specific section, correct a reference, add single element
 - Full replacement: Major structural changes, starting over
+
+---
+
+## CRITICAL: Data Source Transformation Paths
+
+**This is the #1 mistake when creating applications that use MCP tools.**
+
+### The Problem
+
+When testing MCP tools directly, you see the FULL response:
+```json
+{
+  "result": {
+    "raw_response": {
+      "structuredContent": { "count": 10, "events": [...] }
+    }
+  }
+}
+```
+
+But application data source transformations receive UNWRAPPED data:
+```json
+{ "count": 10, "events": [...] }
+```
+
+### Correct Transformation Paths
+
+**WRONG:**
+```json
+"transformations": [{
+  "operation": "json_path_extract",
+  "path": "result.raw_response.structuredContent.events"
+}]
+```
+
+**CORRECT:**
+```json
+"transformations": [{
+  "operation": "json_path_extract",
+  "path": "events"
+}]
+```
+
+### Reference Examples (Working Production App)
+
+**SQL queries (return array of rows):**
+```json
+"transformations": [{
+  "operation": "json_path_extract",
+  "path": "[0].total"  // First row's 'total' field
+}]
+```
+
+**No transformation needed:**
+```json
+"transformations": []  // Data is already in correct format
+```
+
+### Key Rules
+
+1. **Never use `result.raw_response.structuredContent.*`** - the app unwraps this
+2. **SQL results are arrays** - use `[0].field` for first row
+3. **Check error messages** - "Available keys" shows actual structure
+
+---
 
 ### Transitions
 - All validations pass → **SAVE**
@@ -251,8 +370,8 @@ TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", 
 
 ### Context Check
 ```
-elements: Should include create/submit button
-form_data.jsonError: Must be null
+elements: Must include create/submit button (exact ID varies)
+data.applicationCreationState: Must have valid values (no JSON errors)
 ```
 
 ### Goal
@@ -322,108 +441,18 @@ Check the tool result:
 
 ---
 
-## Reference: Manifest Structure Templates
+---
 
-### Simple Dashboard with Metrics
+## Element IDs Reference
 
-```json
-{
-  "metadata": { "name": "Simple Dashboard", "version": "1.0.0" },
-  "layout": {
-    "type": "vstack",
-    "gap": 16,
-    "children": [
-      { "element_id": "header" },
-      {
-        "type": "hstack",
-        "gap": 16,
-        "children": [
-          { "element_id": "metric1" },
-          { "element_id": "metric2" }
-        ]
-      }
-    ]
-  },
-  "ui_elements": {
-    "header": {
-      "component": "Header",
-      "props": { "title": "Dashboard" }
-    },
-    "metric1": {
-      "component": "MetricCard",
-      "props": { "title": "Total", "data_source_id": "count_ds" }
-    },
-    "metric2": {
-      "component": "MetricCard",
-      "props": { "title": "Average", "data_source_id": "avg_ds" }
-    }
-  },
-  "data_sources": {
-    "count_ds": {
-      "type": "mcp_tool",
-      "tool_name": "mcp_database_count",
-      "transformations": [{ "operation": "get_item", "path": "count" }]
-    },
-    "avg_ds": {
-      "type": "mcp_tool",
-      "tool_name": "mcp_database_average",
-      "transformations": [{ "operation": "get_item", "path": "average" }]
-    }
-  },
-  "actions": {}
-}
-```
-
-### Dashboard with Tabs
-
-```json
-{
-  "metadata": { "name": "Tabbed Dashboard", "version": "1.0.0" },
-  "layout": {
-    "type": "tabs",
-    "tabs": [
-      {
-        "id": "overview",
-        "label": "Overview",
-        "content": {
-          "type": "vstack",
-          "children": [{ "element_id": "overview_chart" }]
-        }
-      },
-      {
-        "id": "details",
-        "label": "Details",
-        "content": {
-          "type": "vstack",
-          "children": [{ "element_id": "details_table" }]
-        }
-      }
-    ]
-  },
-  "ui_elements": { ... },
-  "data_sources": { ... },
-  "actions": {}
-}
-```
-
-### Dashboard with Actions
-
-```json
-{
-  "actions": {
-    "refresh_data": {
-      "type": "trigger_workflow",
-      "workflow_id": 42,
-      "label": "Refresh Data"
-    },
-    "export": {
-      "type": "mcp_tool",
-      "tool_name": "mcp_export_csv",
-      "label": "Export CSV"
-    }
-  }
-}
-```
+| Element | ID | Purpose |
+|---------|-----|---------|
+| Name input | `application-name` | Application name field |
+| Description input | `application-description` | Description field |
+| Manifest editor | `application-manifest` | JSON manifest editor |
+| Load template | `load-empty-template-btn` | Load empty manifest template |
+| Cancel button | `create-application-cancel-btn` | Close without creating |
+| Create button | `create-application-submit-btn` | Submit and create |
 
 ---
 
@@ -442,3 +471,5 @@ Check the tool result:
 6. **Circular layouts**: Layout tree must be acyclic—no element can contain itself.
 
 7. **Using patching for major changes**: For significant restructuring, use full replacement instead.
+
+8. **Malformed JSON in patch tool calls**: When patching JSON content, ensure the tool call itself is valid JSON. Use `\n` for newlines and `\"` for quotes inside `expected_text` and `replacement_text` strings.

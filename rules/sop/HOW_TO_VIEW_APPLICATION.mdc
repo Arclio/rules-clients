@@ -27,6 +27,45 @@ Note: Users may jump between INTERACT and EDIT states repeatedly.
 
 ---
 
+## Planning
+
+This protocol can be multi-step and stateful (especially when live-editing). When it is loaded, your **next assistant message must include a plan** before any tool call.
+
+Output the plan as a single JSON object in a `json` code block, using:
+- `goal`, `current_state`, `steps`, `decision_points`, `verification`
+- step `status`: `todo` | `doing` | `done` | `blocked`
+
+Example:
+
+```json
+{
+  "goal": "Help the user view and (optionally) live-edit an application",
+  "current_state": {
+    "page": "/applications/…",
+    "have_unsaved_changes": false
+  },
+  "steps": [
+    {"id": "ASSESS", "status": "doing"},
+    {"id": "INTERACT", "status": "todo"},
+    {"id": "EDIT", "status": "todo"},
+    {"id": "SAVE_CHANGES", "status": "todo"},
+    {"id": "COMPLETE", "status": "todo"}
+  ],
+  "decision_points": [
+    "Whether the user wants to only interact vs make manifest edits",
+    "Confirm before saving if edits change behavior / workflow triggers"
+  ],
+  "verification": [
+    "After each patch, check for new rendering errors",
+    "After save/discard, unsaved-changes flag resets and UI reflects expected state"
+  ]
+}
+```
+
+Update this plan as you progress (mark statuses, add brief notes). If the user only wants to view, mark EDIT/SAVE_CHANGES as `done` with a short note (e.g., \"skipped\").
+
+---
+
 ## State: ASSESS
 
 ### Indicators
@@ -36,13 +75,13 @@ Note: Users may jump between INTERACT and EDIT states repeatedly.
 
 ### Context Check
 ```
-page_type: "application_view"
-application: { id, name, description, version }
-manifest_summary: { total_ui_elements, total_data_sources, tabs }
-active_tab: { id, label, elements_in_view }
-data_sources_status: { total, loaded, loading, errored }
-rendering_errors: [{ element_id, error, component }]
-has_unsaved_changes: boolean
+page.full_path: Should start with "/applications/" (view page)
+data.currentManifestJson: Editable manifest JSON string (for live patching)
+data.renderingErrors: Rendering failures (if any)
+data.dataSourceStates: Loading/error status for data sources (if any)
+data.hasUnsavedManifestChanges: Unsaved edits flag (if present)
+elements: Interactive controls on this page
+actions: Semantic actions available (if present)
 ```
 
 ### Goal
@@ -51,14 +90,13 @@ Understand the dashboard state and identify any issues.
 ### Actions
 
 **1. Check for errors:**
-- Review `rendering_errors` for component failures
-- Review `data_sources_status` for data loading issues
-- Note which elements are affected
+- Review `data.renderingErrors` (if present) for component failures
+- Review `data.dataSourceStates` (if present) for data loading issues
+- Note which elements/data sources are affected
 
 **2. Understand current view:**
-- Which tab is active? (`active_tab.id`)
-- What elements are visible? (`active_tab.elements_in_view`)
-- What actions are available? (`available_actions`)
+- Use `elements` and `actions` to see what can be clicked/triggered right now
+- If the manifest/context provides tab/section info in `data`, identify the active tab/section
 
 **3. If errors exist, report proactively:**
 
@@ -91,9 +129,9 @@ Would you like me to help diagnose and fix these?
 
 ### Context Check
 ```
-available_actions: [{ action_id, label, type }]
-manifest_summary.tabs: Tab IDs if tabbed layout
-active_tab: Current tab info
+elements: Interactive controls available on this page
+actions: Semantic actions available (if present)
+data.currentManifest: May include tabs/layout summary (if present)
 ```
 
 ### Goal
@@ -103,30 +141,30 @@ Help the user interact with the dashboard.
 
 **For "Run the analysis" / Trigger an action:**
 
-1. Find action in `available_actions` with matching label
+1. Find the relevant action in `actions` (if present) or the matching button in `elements`
 2. Click the action button:
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "app-action-{action_id}"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "[APPLICATION_ACTION_BUTTON_ID]"}}
 ```
 
 3. For workflow actions: User will be redirected to workflow execution page
 
 **For "Switch to X tab":**
 
-1. Find tab ID in `manifest_summary.tabs`
-2. Click the tab:
+1. Identify the correct tab control from `elements` (do not guess IDs)
+2. Click the tab control:
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "tab-{tabId}"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "[APPLICATION_TAB_BUTTON_ID]"}}
 ```
 
-3. Context will update with new `active_tab`
+3. Context will update to reflect the new active tab/section (in `data`, `elements`, and any tab indicators)
 
 **For "Why is this empty/broken?":**
 
-1. Check `rendering_errors` for the element
-2. Check `data_sources_status` for data issues
+1. Check `data.renderingErrors` (if present) for the element
+2. Check `data.dataSourceStates` (if present) for data issues
 3. Explain clearly:
 
 ```
@@ -151,8 +189,9 @@ This is likely due to [diagnosis]. Would you like me to fix it?
 
 ### Context Check
 ```
-patchable_text_fields: [{ field: "currentManifestJson", store_id: "applications", path: "currentManifestJson" }]
-has_unsaved_changes: false (initially)
+data.currentManifestJson: Must be present (editable JSON)
+data.patchable_text_fields: Should include `currentManifestJson`
+data.hasUnsavedManifestChanges: false (initially), then true after edits
 ```
 
 ### Goal
@@ -160,7 +199,13 @@ Apply live edits to the manifest using patching.
 
 ### Actions
 
-**Key insight:** The manifest JSON (`currentManifestJson`) is patchable while viewing. Changes apply immediately and the dashboard re-renders.
+**Key insight:** The manifest JSON (`currentManifestJson`) is patchable while viewing. When you apply a patch:
+1. The JSON is updated locally
+2. The manifest is **automatically saved to backend**
+3. Data sources are reloaded with the new configuration
+4. The dashboard re-renders with the results
+
+**Auto-save behavior:** Patches are saved immediately during settlement. There's no need to manually click "Save Changes" after patching - it's done automatically. The settlement result shows whether the save succeeded and any data source errors.
 
 **1. Explain what you're changing:**
 
@@ -170,14 +215,37 @@ I'll add a new metric card to show [description]. This will update the dashboard
 
 **2. Apply patch using ui_patch_text:**
 
+**CRITICAL: JSON Patching Format**
+
+When patching JSON content, the `expected_text` and `replacement_text` must be properly formatted as JSON strings with:
+- Newlines as `\n`
+- Quotes escaped as `\"`
+- Proper indentation preserved
+
+**Correct format example:**
+
 ```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "currentManifestJson", "start_line": 45, "end_line": 52, "expected_text": "... current JSON ...", "replacement_text": "... updated JSON ..."}}
+TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "currentManifestJson", "start_line": 109, "end_line": 132, "expected_text": "    \"weekly_events\": {\n      \"type\": \"mcp_tool\",\n      \"tool_name\": \"google_workspace__calendar_get_events\",\n      \"params\": {\n        \"time_min\": \"{{week_start}}\",\n        \"time_max\": \"{{week_end}}\"\n      }\n    },", "replacement_text": "    \"weekly_events\": {\n      \"type\": \"mcp_tool\",\n      \"tool_name\": \"google_workspace__calendar_get_events\",\n      \"params\": {\n        \"time_min\": \"{{week_start}}\",\n        \"time_max\": \"{{week_end}}\",\n        \"calendar_id\": \"primary\"\n      }\n    },"}}
 ```
 
-**3. Verify the change:**
+**Key rules for JSON patching:**
+- Keep the entire tool call as a single valid JSON object
+- Use `\n` for newlines inside `expected_text` and `replacement_text`
+- Use `\"` for quotes inside the text values
+- Match indentation exactly (use spaces, not tabs)
+- Include trailing commas if the original has them
+- Verify brace balance in both `expected_text` and `replacement_text`
+
+**3. Verify the change from settlement result:**
+The patch tool result includes settlement info:
+- `settlement.manifest_saved: true` - confirms save to backend succeeded
+- `settlement.data_source_error_count` - number of data sources with errors
+- `settlement.data_source_errors` - details of any errors
+
+After settlement:
 - Dashboard re-renders with changes
-- `has_unsaved_changes` becomes `true`
-- Check for new errors in `rendering_errors`
+- Data sources reload and show actual results (errors or data)
+- Check `data.renderingErrors` for component rendering issues
 
 ### Common Edit Operations
 
@@ -190,6 +258,94 @@ TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", 
 1. Patch the specific data source configuration
 2. May need to fix tool name, params, or transformations
 
+---
+
+## CRITICAL: Data Source Transformation Paths
+
+**Understanding the difference between direct MCP tool calls and data source transformations is essential.**
+
+### Direct MCP Tool Calls (Testing)
+
+When you call an MCP tool directly (e.g., `google_workspace__calendar_get_events`), you receive the FULL response structure:
+
+```json
+{
+  "result": {
+    "raw_response": {
+      "structuredContent": {
+        "count": 10,
+        "events": [...]
+      }
+    }
+  }
+}
+```
+
+### Data Source Transformations (Applications)
+
+When data sources execute in applications, the system **unwraps the response** before applying transformations. Your transformations receive only the **actual data content**, not the wrapper structure:
+
+```json
+{
+  "count": 10,
+  "events": [...]
+}
+```
+
+### Example: Correct vs Incorrect Paths
+
+**WRONG (agent common mistake):**
+```json
+"transformations": [{
+  "operation": "json_path_extract",
+  "path": "result.raw_response.structuredContent.events"
+}]
+```
+
+**CORRECT:**
+```json
+"transformations": [{
+  "operation": "json_path_extract",
+  "path": "events"
+}]
+```
+
+### Reference: Working Efficacy App Data Sources
+
+These are real, working transformation paths from a production application:
+
+```json
+// Simple SQL result (array of objects) - extract first row's field
+"transformations": [{
+  "operation": "json_path_extract",
+  "path": "[0].total"
+}]
+
+// No transformation needed - data is already in correct format
+"transformations": []
+```
+
+### How to Diagnose Transformation Errors
+
+When you see errors like:
+```
+"Key 'result' not found in dict. Available keys: ['count', 'events']"
+```
+
+This tells you:
+1. The transformation is looking for `result` but it doesn't exist
+2. The actual data has keys `['count', 'events']` at the TOP level
+3. **Fix:** Use `events` or `count` directly, not a nested path
+
+### Key Rules
+
+1. **Do NOT prefix with `result.raw_response.structuredContent`** - the application execution unwraps this for you
+2. **Check the "Available keys" in error messages** - they show the actual structure you're working with
+3. **SQL results are arrays** - use `[0].field_name` to get the first row
+4. **Calendar/API results vary** - check what keys are actually available in errors
+
+---
+
 **Modify component props:**
 1. Patch the specific element in `ui_elements`
 2. Update relevant props
@@ -199,28 +355,29 @@ TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", 
 2. Optionally add to Header component's actions prop
 
 ### Transitions
-- Changes applied, user wants more → Remain in **EDIT**
-- Changes complete, user wants to save → **SAVE_CHANGES**
-- Changes complete, user wants to discard → **INTERACT** (after discard)
-- User satisfied with changes → Prompt to save
+- Changes applied, check settlement result → If errors, remain in **EDIT** to fix
+- All changes successful → Return to **INTERACT** (auto-saved)
+- Multiple changes needed → Remain in **EDIT** for additional patches
+
+**Note on auto-save:** Since patches are automatically saved during settlement, there's typically no "SAVE_CHANGES" state needed. However, if a manual edit is made without patching, the save/discard buttons are available.
 
 ---
 
-## State: SAVE_CHANGES
+## State: SAVE_CHANGES (Manual Save)
 
 ### Indicators
-- Live edits have been made
-- `has_unsaved_changes: true`
-- User wants to persist changes
+- Manual edits made outside of patching
+- Unsaved changes flag is true (`data.hasUnsavedManifestChanges`)
+- User wants to persist or discard changes
 
 ### Context Check
 ```
-has_unsaved_changes: true
-elements: Should include save/discard buttons
+data.hasUnsavedManifestChanges: true (if present)
+elements: Must include save/discard buttons
 ```
 
 ### Goal
-Persist or discard the changes.
+Persist or discard manual changes.
 
 ### Actions
 
@@ -233,12 +390,14 @@ TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "save-manif
 **To discard changes:**
 
 ```
-TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "discard-manifest-btn"}}
+TOOL_CALL: {"name": "ui_trigger_click", "parameters": {"element_id": "discard-manifest-changes-btn"}}
 ```
 
 **After save/discard:**
-- `has_unsaved_changes` returns to `false`
+- Unsaved changes flag returns to false
 - Dashboard reflects saved state (or reverts if discarded)
+
+**Note:** When using `ui_patch_text`, changes are automatically saved during settlement. Manual save is only needed for edits made outside the patching flow.
 
 ### Transitions
 - Changes saved → **COMPLETE**
@@ -280,83 +439,34 @@ Is there anything else you'd like to do with this dashboard?
 
 ---
 
-## Reference: Live Editing Patterns
-
-### Add a Metric Card
-
-**Step 1: Add to ui_elements**
-```json
-"new_metric": {
-  "component": "MetricCard",
-  "props": {
-    "title": "New Metric",
-    "data_source_id": "new_metric_ds"
-  }
-}
-```
-
-**Step 2: Add to layout** (find appropriate position)
-```json
-{ "element_id": "new_metric" }
-```
-
-**Step 3: Add data source**
-```json
-"new_metric_ds": {
-  "type": "mcp_tool",
-  "tool_name": "mcp_server_tool",
-  "transformations": [
-    { "operation": "get_item", "path": "data.value" }
-  ]
-}
-```
-
-### Fix a Data Source Transformation
-
-```
-TOOL_CALL: {"name": "ui_patch_text", "parameters": {"store_id": "applications", "path": "currentManifestJson", "start_line": 89, "end_line": 91, "expected_text": "    { \"operation\": \"get_item\", \"path\": \"wrong.path\" }", "replacement_text": "    { \"operation\": \"get_item\", \"path\": \"data.results\" }"}}
-```
-
-### Add Action to Header
-
-```json
-// In actions section:
-"refresh_data": {
-  "type": "trigger_workflow",
-  "workflow_id": 42,
-  "label": "Refresh Data"
-}
-
-// In Header props:
-"actions": [{ "action_id": "refresh_data" }]
-```
-
 ---
 
-## Store Paths Reference
+## Element IDs Reference
 
-| Context | Store Path | Usage |
-|---------|------------|-------|
-| View page (live editing) | `currentManifestJson` | Patching while viewing |
-| Edit modal | `applicationEditState.manifestJson` | Editing via modal |
-| Create modal | `applicationCreationState.manifestJson` | Creating new app |
-
-**Important:** Use `currentManifestJson` when on the view page (`/applications/{id}`).
+| Element | ID | Purpose |
+|---------|-----|---------|
+| Back button | `back-to-applications-btn` | Return to applications list |
+| Save button | `save-manifest-btn` | Save manifest changes |
+| Discard button | `discard-manifest-changes-btn` | Discard unsaved changes |
 
 ---
 
 ## Common Pitfalls
 
-1. **Making changes without saving**: Prompt user to save when `has_unsaved_changes: true`.
+1. **Patches auto-save**: Unlike manual edits, `ui_patch_text` automatically saves during settlement. Check `settlement.manifest_saved` in the result to confirm.
 
 2. **Using wrong store path**: Use `currentManifestJson` on view page, not edit modal paths.
 
 3. **Multiple unrelated changes**: Get user confirmation between major changes.
 
-4. **Ignoring rendering errors**: They indicate manifest problems—fix them.
+4. **Ignoring data source errors in settlement**: Check `settlement.data_source_errors` in patch result to see if fixes worked.
 
 5. **Assuming manifest structure**: Rely on context data and patching, don't assume you know the full structure.
 
 6. **Forgetting to explain changes**: Tell the user what you're changing before patching.
 
-7. **Not checking for errors after edit**: Verify no new rendering errors appeared.
+7. **Not checking settlement results**: After patching, check both `settlement.manifest_saved` and `settlement.data_source_errors` to verify success.
+
+8. **Malformed JSON in patch tool calls**: When patching JSON content, ensure the tool call itself is valid JSON. Use `\n` for newlines and `\"` for quotes inside `expected_text` and `replacement_text` strings.
+
+9. **Expecting immediate feedback loop resolution**: If multiple data sources have errors, you may need multiple patches. Each patch saves, reloads, and returns current state.

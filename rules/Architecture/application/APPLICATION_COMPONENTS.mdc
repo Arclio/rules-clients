@@ -142,9 +142,127 @@ Full-featured table with sorting, filtering, and pagination.
 
 **Badge Colors:** When `format: "badge"`, the `badge_colors` object maps cell values to color names.
 
-#### 3.3 ChartCard
+#### 3.3 Chart Components
 
-Card containing a data visualization (line, bar, pie, area, scatter).
+Charts use **dedicated component types**, not a generic ChartCard. Each chart type has its own component name and config schema.
+
+---
+
+##### 3.3.1 PieChart
+
+Displays proportional data as a pie/donut chart.
+
+**Component Name:** `"PieChart"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Chart title |
+| `data_source_id` | `string` | Yes | Reference to data source (array with `label` and `value` fields) |
+| `config` | `PieChartConfig` | Yes | Chart configuration |
+
+**PieChartConfig Schema:**
+```typescript
+{
+  "colors": string[],        // Array of hex colors for segments (e.g., ["#10B981", "#6366F1"])
+  "showLegend": boolean,     // Show legend (default: true)
+  "showLabels": boolean      // Show labels on segments (default: true)
+}
+```
+
+**Data Source Format:** Must return array of objects with `label` and `value`:
+```json
+[
+  { "label": "Category A", "value": 45.5 },
+  { "label": "Category B", "value": 30.2 },
+  { "label": "Category C", "value": 24.3 }
+]
+```
+
+**Usage Example:**
+```json
+{
+  "component": "PieChart",
+  "props": {
+    "title": "Response Category Breakdown",
+    "data_source_id": "response_breakdown_data",
+    "config": {
+      "colors": ["#10B981", "#8B5CF6", "#6366F1", "#F59E0B", "#9CA3AF", "#EF4444"],
+      "showLegend": true,
+      "showLabels": true
+    }
+  }
+}
+```
+
+---
+
+##### 3.3.2 AreaChart
+
+Displays time-series or continuous data as an area chart.
+
+**Component Name:** `"AreaChart"`
+
+**Props:**
+| Prop | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `title` | `string` | Yes | Chart title |
+| `subtitle` | `string` | No | Chart subtitle/description |
+| `data_source_id` | `string` | Yes | Reference to data source (array with `x` and `y` fields) |
+| `height` | `number` | No | Chart height in pixels (default: 300) |
+| `config` | `AreaChartConfig` | Yes | Chart configuration |
+| `statistics` | `StatItem[]` | No | Key statistics to display below chart |
+| `notes` | `string[]` | No | Notes to display |
+
+**AreaChartConfig Schema:**
+```typescript
+{
+  "xaxis_label": string,     // X-axis label
+  "yaxis_label": string,     // Y-axis label
+  "fill_color": string,      // Area fill color (hex)
+  "stroke_color": string,    // Line stroke color (hex)
+  "fill_opacity": number,    // Fill opacity 0-1 (default: 0.4)
+  "curve": "smooth" | "linear",  // Line curve type
+  "showGrid": boolean        // Show grid lines
+}
+```
+
+**Data Source Format:** Must return array of objects with `x` and `y`:
+```json
+[
+  { "x": 0, "y": 65 },
+  { "x": 3, "y": 58 },
+  { "x": 6, "y": 45 }
+]
+```
+
+**Usage Example:**
+```json
+{
+  "component": "AreaChart",
+  "props": {
+    "title": "Progression-Free Survival",
+    "subtitle": "Months from treatment start",
+    "data_source_id": "pfs_data",
+    "height": 400,
+    "config": {
+      "xaxis_label": "Months",
+      "yaxis_label": "Patients",
+      "fill_color": "#E0E7FF",
+      "stroke_color": "#6366F1",
+      "fill_opacity": 0.4,
+      "curve": "smooth",
+      "showGrid": true
+    }
+  }
+}
+```
+
+---
+
+##### 3.3.3 ChartCard (Generic)
+
+Generic chart wrapper for simpler visualizations (line, bar).
 
 **Component Name:** `"ChartCard"`
 
@@ -152,15 +270,15 @@ Card containing a data visualization (line, bar, pie, area, scatter).
 | Prop | Type | Required | Description |
 | :--- | :--- | :--- | :--- |
 | `title` | `string` | Yes | Chart title |
-| `chart_type` | `"line" \| "bar" \| "pie" \| "area" \| "scatter"` | Yes | Visualization type |
+| `chart_type` | `"line" \| "bar"` | Yes | Visualization type |
 | `data_source_id` | `string` | Yes | Reference to data source |
 | `config` | `ChartConfig` | Yes | Chart-specific configuration |
 
 **ChartConfig Schema:**
 ```typescript
 {
-  "x_axis": { "field": string, "label": string? }?,
-  "y_axis": { "field": string, "label": string? }?,
+  "x_axis": { "field": string, "label": string? },
+  "y_axis": { "field": string, "label": string? },
   "series": Array<{ "field": string, "label": string?, "color": string? }>?,
   "legend": boolean?
 }
@@ -171,16 +289,18 @@ Card containing a data visualization (line, bar, pie, area, scatter).
 {
   "component": "ChartCard",
   "props": {
-    "title": "Duration of Response",
+    "title": "Monthly Trends",
     "chart_type": "line",
-    "data_source_id": "duration_data",
+    "data_source_id": "monthly_data",
     "config": {
-      "x_axis": { "field": "weeks", "label": "Weeks" },
-      "y_axis": { "field": "percentage", "label": "Response (%)" }
+      "x_axis": { "field": "month", "label": "Month" },
+      "y_axis": { "field": "count", "label": "Count" }
     }
   }
 }
 ```
+
+**IMPORTANT:** For pie charts, use `PieChart` component. For area charts, use `AreaChart` component. `ChartCard` only supports `line` and `bar` types.
 
 #### 3.4 ListComponent
 
@@ -346,14 +466,23 @@ Alert or informational banner for notices and warnings.
 | :--- | :--- | :--- |
 | Show single numeric value | `MetricCard` | Optimized for KPIs and metrics |
 | Display tabular data | `DataTable` | Supports sorting, filtering, pagination |
-| Show trend over time | `ChartCard` (line) | Best for time-series data |
+| Show trend over time | `AreaChart` or `ChartCard` (line) | Best for time-series data |
 | Compare categories | `ChartCard` (bar) | Best for categorical comparisons |
-| Show proportions | `ChartCard` (pie) | Best for part-to-whole relationships |
+| Show proportions | `PieChart` | Best for part-to-whole relationships |
 | List of recent items | `ListComponent` | Flexible template-based rendering |
 | Primary call-to-action | `HeroCard` | Large, prominent, centered |
 | Static instructions | `ContentCard` | Supports rich text, lists, markdown |
 | System messages | `InfoBanner` | Color-coded by severity |
 | Page header | `Header` | Standard header with actions |
+
+**Chart Component Quick Reference:**
+
+| Chart Type | Component | NOT This |
+| :--- | :--- | :--- |
+| Pie chart | `PieChart` | ~~`ChartCard` with `chart_type: "pie"`~~ |
+| Area chart | `AreaChart` | ~~`ChartCard` with `chart_type: "area"`~~ |
+| Line chart | `ChartCard` with `chart_type: "line"` | |
+| Bar chart | `ChartCard` with `chart_type: "bar"` | |
 
 ### 6.0 Common Component Patterns
 
